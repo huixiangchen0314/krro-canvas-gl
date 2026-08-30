@@ -1,0 +1,14 @@
+
+
+.cpcache/
+**/.cache/
+**/cache/
+
+
+#*#
+.idea/
+.clj-kondo/
+krro-plugin-painting-gl-renderer.iml
+
+target/
+.nrepl-port
