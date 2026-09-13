@@ -1,7 +1,5 @@
 package top.kzre.krro.canvas.gl.tile;
 
-import top.kzre.krro.util.tile.TileData;
-
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Comparator;
@@ -142,7 +140,7 @@ public final class GLAtlasPool {
     private GLAtlas createAtlasAt(int unit) {
         GLAtlas atlas;
         try {
-            atlas = atlasFactory.create(unit);
+            atlas = atlasFactory.create();
         } catch (Throwable t) {
             System.err.println("Failed to create atlas at unit " + unit + ": " + t);
             throw t;
