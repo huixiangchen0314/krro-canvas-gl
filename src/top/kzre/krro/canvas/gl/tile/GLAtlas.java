@@ -1,6 +1,7 @@
 package top.kzre.krro.canvas.gl.tile;
 
 import org.lwjgl.system.MemoryUtil;
+import top.kzre.krro.canvas.core.layer.render.UploadableTile;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.resource.PixelFormat;
 import top.kzre.krro.util.tile.*;
@@ -405,7 +406,7 @@ public final class GLAtlas {
      * <p>内部字段 {@code handle} / {@code descriptor} 不做同步——访问
      * 完全落在 GL 线程内，由上述契约保证。
      */
-    public static final class GLTileData implements TileData, GLUploadableTile {
+    public static final class GLTileData implements TileData, GLTile, UploadableTile {
         private final TileData peer;
         /** 跨线程访问：CPU 线程 markDirty，GL 线程 ensureUploaded 清。 */
         private final AtomicBoolean dirty = new AtomicBoolean(true);

@@ -1,6 +1,7 @@
 package top.kzre.krro.canvas.gl.tile;
 
 import org.lwjgl.system.MemoryUtil;
+import top.kzre.krro.canvas.core.layer.render.DownloadableTile;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.resource.PixelFormat;
 import top.kzre.krro.util.tile.AbstractTileData;
@@ -172,7 +173,7 @@ public final class GLTiledTexture {
     // ═══════════════════════════════════════════════
 
     public static final class GLTextureTileData extends AbstractTileData
-            implements GLDownloadableTile {
+            implements GLTile, DownloadableTile {
 
         private final GLTiledTexture owner;
         private final int layer;
