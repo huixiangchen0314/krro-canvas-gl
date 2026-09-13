@@ -37,7 +37,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 瓦片级操作（{@code clear} / {@code deleteTile}）不涉及像素访问，安全。
  *
  * <h2>线程契约</h2>
- * <p><b>{@link #bind} / {@link #downloadTo} 必须在 GL 线程上调用。</b>
  * 释放动作由 {@code onRelease} 投递到 GL 线程——可在任意线程触发。
  */
 public final class GLTiledTexture {
@@ -137,36 +136,6 @@ public final class GLTiledTexture {
     /** 是否已释放（视图计数归零后自动置位）。 */
     public boolean isReleased() { return released; }
 
-    /** 当前活跃视图数。归零时纹理自动释放。 */
-    public int getActiveTileCount() { return activeTiles.get(); }
-
-    /**
-     * 把纹理的所有瓦片下载到目标画布。
-     *
-     * <p>目标画布的 {@code tileSize} 必须与本纹理一致——坐标一一对应。
-     *
-     * <p><b>必须在 GL 线程上调用。</b>
-     */
-    public void downloadTo(TiledCanvas target) {
-        assertRgba8(target);
-        if (target.getTileSize() != tileSize()) {
-            throw new IllegalStateException(
-                    "tileSize mismatch: expected " + tileSize()
-                            + ", got " + target.getTileSize());
-        }
-
-        int grid   = gridSize();
-        int layers = texture.getLayers();
-
-        for (int layer = 0; layer < layers; layer++) {
-            for (int sy = 0; sy < grid; sy++) {
-                for (int sx = 0; sx < grid; sx++) {
-                    downloadTile(target, layer, sx, sy);
-                }
-            }
-        }
-    }
-
     // ═══════════════════════════════════════════════
     // 内部——供 GLTextureTileData 访问
     // ═══════════════════════════════════════════════
@@ -185,7 +154,7 @@ public final class GLTiledTexture {
      * <p>每个视图只会在引用归零时触发一次——计数从 N 到 0 只会发生
      * 一次，释放只投递一次。
      */
-    void decrementActiveTile() {
+   private void decrementActiveTile() {
         int remaining = activeTiles.decrementAndGet();
 
         if (remaining < 0) {
@@ -199,54 +168,11 @@ public final class GLTiledTexture {
     }
 
     // ═══════════════════════════════════════════════
-    // 下载辅助
-    // ═══════════════════════════════════════════════
-    private void downloadTile(TiledCanvas target, int layer, int sx, int sy) {
-        int ts = tileSize();
-        int tx = sx;
-        int ty = layer * gridSize() + sy;
-
-        ByteBuffer packed = texture.downloadRegion(
-                layer, sx * ts, sy * ts, ts, ts);
-        try {
-            ByteBuffer unpacked = unpackRgba8(packed, ts * ts);
-            target.replaceTile(tx, ty, unpacked);
-        } finally {
-            MemoryUtil.memFree(packed);
-        }
-    }
-
-    private void assertRgba8(TiledCanvas target) {
-        if (texture.getPixelFormat() != PixelFormat.RGBA8) {
-            throw new UnsupportedOperationException(
-                    "downloadTo only supports RGBA8; got " + texture.getPixelFormat());
-        }
-        if (target.getChannels() != 4) {
-            throw new IllegalStateException(
-                    "TiledCanvas.channels must be 4, got " + target.getChannels());
-        }
-    }
-
-    private static ByteBuffer unpackRgba8(ByteBuffer packed, int pixelCount) {
-        ByteBuffer out = MemoryUtil.memAlloc(pixelCount * 4 * Float.BYTES);
-        FloatBuffer dst = out.asFloatBuffer();
-        ByteBuffer src  = packed.duplicate();
-        for (int i = 0; i < pixelCount; i++) {
-            int rgba = src.getInt();
-            dst.put(((rgba >> 24) & 0xFF) / 255f);
-            dst.put(((rgba >> 16) & 0xFF) / 255f);
-            dst.put(((rgba >>  8) & 0xFF) / 255f);
-            dst.put(( rgba        & 0xFF) / 255f);
-        }
-        dst.flip();
-        return out;
-    }
-
-    // ═══════════════════════════════════════════════
     // 视图类型
     // ═══════════════════════════════════════════════
 
-    public static final class GLTextureTileData extends AbstractTileData implements GLTile {
+    public static final class GLTextureTileData extends AbstractTileData
+            implements GLDownloadableTile {
 
         private final GLTiledTexture owner;
         private final int layer;
@@ -259,17 +185,14 @@ public final class GLTiledTexture {
             this.sy    = sy;
         }
 
-        GLTiledTexture getOwner() {
-            return owner;
-        }
+        // ── GLTile ────────────────────────────────────
 
         @Override
         public GLTileDescriptor getDescriptor() {
             int unit = owner.getUnit();
             if (unit < 0) {
                 throw new IllegalStateException(
-                        "GLTiledTexture unit not assigned; call bind(n) before "
-                                + "collecting descriptors");
+                        "GLTiledTexture unit not assigned; call bind(n) first");
             }
             int grid = owner.gridSize();
             return GLTileDescriptor.of(
@@ -277,11 +200,25 @@ public final class GLTiledTexture {
                     (float) sx / grid, (float) sy / grid);
         }
 
-        /**
-         * 引用计数归零——通知 owner 递减活跃视图计数。
-         *
-         * <p>计数归零时 owner 自动投递纹理释放。
-         */
+        // ── GLDownloadableTile ────────────────────────
+
+        @Override
+        public void downloadTo(TiledCanvas target, int tx, int ty) {
+            assertRgba8(target);
+            int ts = owner.tileSize();
+
+            ByteBuffer packed = owner.texture().downloadRegion(
+                    layer, sx * ts, sy * ts, ts, ts);
+            try {
+                ByteBuffer unpacked = unpackRgba8(packed, ts * ts);
+                target.replaceTile(tx, ty, unpacked);
+            } finally {
+                MemoryUtil.memFree(packed);
+            }
+        }
+
+        // ── AbstractTileData ──────────────────────────
+
         @Override
         protected void onRelease() {
             owner.decrementActiveTile();
@@ -293,6 +230,8 @@ public final class GLTiledTexture {
             int ts = owner.tileSize();
             return ts * ts * fmt.getBytesPerPixel();
         }
+
+        // ── CPU 侧访问：不支持 ───────────────────────
 
         @Override
         public float[] getPixels() {
@@ -307,7 +246,36 @@ public final class GLTiledTexture {
         @Override
         public TileData copy() {
             throw new UnsupportedOperationException(
-                    "GLTextureTileData cannot be copied; it's a read-only GPU view");
+                    "GLTextureTileData cannot be copied");
         }
+
+        private void assertRgba8(TiledCanvas target) {
+            if (owner.texture().getPixelFormat() != PixelFormat.RGBA8) {
+                throw new UnsupportedOperationException(
+                        "downloadTo only supports RGBA8; got "
+                                + owner.texture().getPixelFormat());
+            }
+            if (target.getChannels() != 4) {
+                throw new IllegalStateException(
+                        "TiledCanvas.channels must be 4, got " + target.getChannels());
+            }
+        }
+
+        private static ByteBuffer unpackRgba8(ByteBuffer packed, int pixelCount) {
+            ByteBuffer out = MemoryUtil.memAlloc(pixelCount * 4 * Float.BYTES);
+            FloatBuffer dst = out.asFloatBuffer();
+            ByteBuffer src  = packed.duplicate();
+            for (int i = 0; i < pixelCount; i++) {
+                int rgba = src.getInt();
+                dst.put(((rgba >> 24) & 0xFF) / 255f);
+                dst.put(((rgba >> 16) & 0xFF) / 255f);
+                dst.put(((rgba >>  8) & 0xFF) / 255f);
+                dst.put(( rgba        & 0xFF) / 255f);
+            }
+            dst.flip();
+            return out;
+        }
+
+
     }
 }
