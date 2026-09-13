@@ -10,51 +10,51 @@ import top.kzre.krro.util.tile.TiledCanvas;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * GPU 纹理的 {@link TiledCanvas} 适配。
  *
- * <p>内部创建并持有一个<b>只读</b> {@link TiledCanvas}，构造时把所有
- * 瓦片区域 {@code (layer, sx, sy)} 注册为 canvas 的 tile。每个 tile 的
+ * <p>内部创建并持有一个 {@link TiledCanvas}，构造时把所有瓦片区域
+ * {@code (layer, sx, sy)} 注册为 canvas 的 tile。每个 tile 的
  * {@link TileData} 是一个只读的 {@link GLTextureTileData} 视图。
  *
- * <h2>坐标映射</h2>
- * <pre>
- *   tx = sx
- *   ty = layer * gridSize + sy
- * </pre>
- *
  * <h2>生命周期</h2>
- * <p>本类的生命周期<b>直接跟随纹理</b>——{@link #close()} 释放纹理，
- * 没有引用计数。canvas 中的视图只是「读取窗口」——不参与生命周期管理。
+ * <p><b>没有显式 close</b>——生命周期完全绑定到 canvas 视图计数：
+ * <ul>
+ *   <li>构造时注入 N 个视图，{@code activeTiles = N}</li>
+ *   <li>每个视图引用归零 → {@code onRelease} → 计数递减</li>
+ *   <li>计数归零 → 自动投递 {@code texture.release()} 到 GL 线程</li>
+ * </ul>
  *
- * <p>canvas 是只读的——CPU 侧的 {@code clear()} 会抛异常。生命周期
- * 必须通过 {@link #close()} 显式结束。
+ * <p>调用方只需清空 canvas（{@code canvas.clear()} 或释放所有视图的
+ * 外部引用），纹理自动释放。
+ *
+ * <h2>像素访问</h2>
+ * <p>canvas <b>不设只读标志</b>——但逐像素路径在到达
+ * {@link GLTextureTileData#getPixels} / {@link GLTextureTileData#floatBuffer}
+ * 时抛 {@link UnsupportedOperationException}——GPU 视图没有 CPU 侧数据。
+ * 瓦片级操作（{@code clear} / {@code deleteTile}）不涉及像素访问，安全。
  *
  * <h2>线程契约</h2>
- * <p><b>{@link #bind} / {@link #downloadTo} / {@link #close}
- * 必须在 GL 线程上调用。</b>
- * {@link #asCanvas()} 返回的 canvas 读取操作可任意线程。
+ * <p><b>{@link #bind} / {@link #downloadTo} 必须在 GL 线程上调用。</b>
+ * 释放动作由 {@code onRelease} 投递到 GL 线程——可在任意线程触发。
  */
-public final class GLTiledTexture implements AutoCloseable{
+public final class GLTiledTexture {
 
     private final GLTexture texture;
     private final TiledCanvas canvas;
     private final Executor  glExecutor;
 
+    /** 活跃视图计数——归零时自动释放纹理。 */
+    private final AtomicInteger activeTiles = new AtomicInteger(0);
+
     /** 纹理单元。-1 表示尚未绑定。 */
     private int unit = -1;
 
-    /** 是否已关闭——防止重复 close。 */
-    private volatile boolean closed = false;
+    /** 是否已释放——归零后为 true，防止重复释放。 */
+    private volatile boolean released = false;
 
-    /**
-     * @param texture    底层纹理（{@code GL_TEXTURE_2D_ARRAY}），必须方形，
-     *                   边长整除 {@code tileSize}。<b>所有权转移给本类。</b>
-     * @param tileSize   瓦片边长（像素）
-     * @param glExecutor 投递释放任务的执行器——必须绑到 GL 线程
-     * @throws IllegalArgumentException 参数非法
-     */
     public GLTiledTexture(GLTexture texture, int tileSize, Executor glExecutor) {
         if (texture == null) {
             throw new IllegalArgumentException("texture must not be null");
@@ -78,8 +78,7 @@ public final class GLTiledTexture implements AutoCloseable{
 
         this.texture    = texture;
         this.glExecutor = glExecutor;
-
-        this.canvas = buildTiledCanvas(texture, tileSize);
+        this.canvas     = buildTiledCanvas(texture, tileSize);
     }
 
     private TiledCanvas buildTiledCanvas(GLTexture texture, int tileSize) {
@@ -92,12 +91,12 @@ public final class GLTiledTexture implements AutoCloseable{
                 for (int sx = 0; sx < gridSize; sx++) {
                     int tx = sx;
                     int ty = layer * gridSize + sy;
+                    activeTiles.incrementAndGet();
                     GLTextureTileData view = new GLTextureTileData(this, layer, sx, sy);
                     c.replaceTile(tx, ty, view);
                 }
             }
         }
-        c.setReadonly(true);
         return c;
     }
 
@@ -108,26 +107,25 @@ public final class GLTiledTexture implements AutoCloseable{
     /**
      * 以 {@link TiledCanvas} 形式访问本纹理的瓦片容器。
      *
-     * <p><b>同一实体的两个视图</b>——{@code GLTiledTexture} 和它返回的
-     * canvas 描述同一份数据。canvas 是<b>只读</b>的——CPU 侧写操作无意义。
-     *
-     * <p>生命周期由 {@link #close()} 结束——canvas 自身不能触发释放。
+     * <p>清空 canvas（{@code canvas.clear()}）会让所有视图引用归零，
+     * 自动触发纹理释放。
      */
-    public TiledCanvas asCanvas() {
-        return canvas;
-    }
+    public TiledCanvas asCanvas() { return canvas; }
 
     /**
      * 绑定到指定纹理单元——设置 unit 并绑定底层纹理。
      *
      * <p><b>有 GL 副作用</b>——必须在 GL 线程上调用。
      *
-     * @param unit 纹理单元索引，必须 ≥ 0
      * @throws IllegalArgumentException unit &lt; 0
+     * @throws IllegalStateException    纹理已释放
      */
     public void bind(int unit) {
         if (unit < 0) {
             throw new IllegalArgumentException("unit must be >= 0, got " + unit);
+        }
+        if (released) {
+            throw new IllegalStateException("GLTiledTexture has been released");
         }
         this.unit = unit;
         this.texture.bind(unit);
@@ -136,15 +134,18 @@ public final class GLTiledTexture implements AutoCloseable{
     /** 当前纹理单元。-1 表示尚未绑定。 */
     public int getUnit() { return unit; }
 
-    /** 是否已关闭。 */
-    public boolean isClosed() { return closed; }
+    /** 是否已释放（视图计数归零后自动置位）。 */
+    public boolean isReleased() { return released; }
+
+    /** 当前活跃视图数。归零时纹理自动释放。 */
+    public int getActiveTileCount() { return activeTiles.get(); }
 
     /**
      * 把纹理的所有瓦片下载到目标画布。
      *
      * <p>目标画布的 {@code tileSize} 必须与本纹理一致——坐标一一对应。
      *
-     * <p><b>必须在 GL 线程上调用。</b>下载会同步等待 GPU。
+     * <p><b>必须在 GL 线程上调用。</b>
      */
     public void downloadTo(TiledCanvas target) {
         assertRgba8(target);
@@ -166,23 +167,6 @@ public final class GLTiledTexture implements AutoCloseable{
         }
     }
 
-    /**
-     * 关闭——释放底层纹理。幂等。
-     *
-     * <p><b>为什么必须显式 close</b>：canvas 是只读的——CPU 侧的
-     * {@code clear()} 会抛异常。生命周期无法通过 canvas 语义自然结束。
-     *
-     * <p>投递 {@code texture.release()} 到 GL 线程——<b>不等待</b>。
-     *
-     * <p><b>必须在 GL 线程上调用。</b>
-     */
-    @Override
-    public void close() {
-        if (closed) return;
-        closed = true;
-        glExecutor.execute(texture::release);
-    }
-
     // ═══════════════════════════════════════════════
     // 内部——供 GLTextureTileData 访问
     // ═══════════════════════════════════════════════
@@ -191,10 +175,32 @@ public final class GLTiledTexture implements AutoCloseable{
     int tileSize()    { return canvas.getTileSize(); }
     int gridSize()    { return texture.getWidth() / canvas.getTileSize(); }
 
+    /**
+     * 视图引用归零时调用——递减计数。
+     *
+     * <p><b>归零时自动释放纹理</b>——投递 {@code texture.release()} 到
+     * GL 线程。这是本类唯一的释放触发点——生命周期完全绑定到 canvas
+     * 的视图计数。
+     *
+     * <p>每个视图只会在引用归零时触发一次——计数从 N 到 0 只会发生
+     * 一次，释放只投递一次。
+     */
+    void decrementActiveTile() {
+        int remaining = activeTiles.decrementAndGet();
+
+        if (remaining < 0) {
+            throw new IllegalStateException(
+                    "activeTiles went negative: " + remaining + " — double release");
+        }
+        if (remaining == 0 && !released) {
+            released = true;
+            glExecutor.execute(texture::release);
+        }
+    }
+
     // ═══════════════════════════════════════════════
     // 下载辅助
     // ═══════════════════════════════════════════════
-
     private void downloadTile(TiledCanvas target, int layer, int sx, int sy) {
         int ts = tileSize();
         int tx = sx;
@@ -240,18 +246,6 @@ public final class GLTiledTexture implements AutoCloseable{
     // 视图类型
     // ═══════════════════════════════════════════════
 
-    /**
-     * 纯 GPU 瓦片视图：指向 {@link GLTexture} 中某个瓦片区域。
-     *
-     * <p><b>唯一用途是占位</b>——让 canvas 有内容、让外部遍历时有对象
-     * 可拿。下载操作由 {@link GLTiledTexture#downloadTo} 承担。
-     *
-     * <p><b>生命周期</b>：视图不参与 owner 的生命周期管理。owner 的生命
-     * 周期由 {@link GLTiledTexture#close()} 直接控制。
-     *
-     * <p><b>CPU 侧访问不支持</b>——{@link #getPixels} / {@link #floatBuffer}
-     * / {@link #copy} 抛 {@link UnsupportedOperationException}。
-     */
     public static final class GLTextureTileData extends AbstractTileData implements GLTile {
 
         private final GLTiledTexture owner;
@@ -265,6 +259,10 @@ public final class GLTiledTexture implements AutoCloseable{
             this.sy    = sy;
         }
 
+        GLTiledTexture getOwner() {
+            return owner;
+        }
+
         @Override
         public GLTileDescriptor getDescriptor() {
             int unit = owner.getUnit();
@@ -275,16 +273,18 @@ public final class GLTiledTexture implements AutoCloseable{
             }
             int grid = owner.gridSize();
             return GLTileDescriptor.of(
-                    unit,
-                    layer,
-                    owner.tileSize(),
-                    (float) sx / grid,
-                    (float) sy / grid);
+                    unit, layer, owner.tileSize(),
+                    (float) sx / grid, (float) sy / grid);
         }
 
+        /**
+         * 引用计数归零——通知 owner 递减活跃视图计数。
+         *
+         * <p>计数归零时 owner 自动投递纹理释放。
+         */
         @Override
         protected void onRelease() {
-            // 视图生命周期不参与 owner 的管理——无操作。
+            owner.decrementActiveTile();
         }
 
         @Override
