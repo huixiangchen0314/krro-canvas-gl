@@ -337,21 +337,21 @@ public final class GLTexture {
     // ═══════════════════════════════════════════════
 
     /** GL 纹理句柄。 */
-    public int handle()         { return handle; }
+    public int getHandle()         { return handle; }
     /** 宽（像素）。 */
-    public int width()          { return width; }
+    public int getWidth()          { return width; }
     /** 高（像素）。 */
-    public int height()         { return height; }
+    public int getHeight()         { return height; }
     /** 层数（tile 数量）。 */
-    public int layers()         { return layers; }
+    public int getLayers()         { return layers; }
     /** GL 内部格式。 */
-    public int internalFormat() { return internalFormat; }
+    public int getInternalFormat() { return internalFormat; }
     /** 客户端数据格式。 */
-    public int format()         { return format; }
+    public int getFormat()         { return format; }
     /** 客户端数据类型。 */
-    public int type()           { return type; }
+    public int getType()           { return type; }
     /** 每像素字节数，由 format + type 推导。 */
-    public int bytesPerPixel()  { return bytesPerPixel; }
+    public int getBytesPerPixel()  { return bytesPerPixel; }
     /** 是否已经释放。 */
     public boolean isReleased() { return released; }
 
