@@ -1,5 +1,7 @@
 package top.kzre.krro.canvas.gl.tile;
 
+import top.kzre.krro.util.tile.TileData;
+
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Comparator;
@@ -70,7 +72,7 @@ public final class GLAtlasPool {
             if (unit > max) max = unit;
         }
         this.units        = units.clone();
-        this.maxUnit      = max + 1;
+        this.maxUnit = max + 1;
         this.atlasFactory = atlasFactory;
         this.assigned     = new BitSet(maxUnit);
         this.atlases      = new AtomicReferenceArray<>(maxUnit);
@@ -84,6 +86,8 @@ public final class GLAtlasPool {
         for (int i = 0; i < maxUnit; i++) arr[i] = i;
         return arr;
     }
+
+
 
     // ═══════════════════════════════════════════════
     // 分配
@@ -260,16 +264,16 @@ public final class GLAtlasPool {
     }
 
     /**
-     * 整理池中的 atlas，把瓦片压缩到不超过 {@code limit} 个非空 atlas。
+     * 整理池中的 atlas，把瓦片压缩到不超过 {@code keepUnits} 个非空 atlas。
      *
      * <p><b>策略</b>：非空 atlas 按已分配层数<b>升序</b>排列——已分配最少
      * 的优先作为 src 搬空。dst 是已分配最多的若干个（保留集）。这样每次
      * 搬运的 tile 数量最少。
      *
-     * <p><b>limit 语义</b>：
+     * <p><b>keepUnits 语义</b>：
      * <ul>
-     *   <li>{@code limit >= 1}：尝试压缩到 ≤ limit 个非空 atlas</li>
-     *   <li>{@code limit = 0}：尽可能压缩——效果等同 limit = 1，
+     *   <li>{@code keepUnits >= 1}：尝试压缩到 ≤ keepUnits 个非空 atlas</li>
+     *   <li>{@code keepUnits = 0}：尽可能压缩——效果等同 keepUnits = 1，
      *       因为只要池中有数据，非空 atlas 至少 1 个</li>
      * </ul>
      *
@@ -277,14 +281,14 @@ public final class GLAtlasPool {
      *
      * <p><b>必须在 GL 线程上调用。</b>
      *
-     * @param limit 目标非空 atlas 数量上限，≥ 0
+     * @param keepUnits 目标非空 atlas 数量上限，≥ 0
      */
-    public void pack(int limit) {
-        if (limit < 0) {
-            throw new IllegalArgumentException("limit must be >= 0: " + limit);
+    public void pack(int keepUnits) {
+        if (keepUnits < 0) {
+            throw new IllegalArgumentException("keepUnits must be >= 0: " + keepUnits);
         }
 
-        int effectiveLimit = Math.max(limit, 1);
+        int effectiveLimit = Math.max(keepUnits, 1);
 
         List<GLAtlas> nonEmpty = collectNonEmpty();
         if (nonEmpty.size() <= effectiveLimit) {

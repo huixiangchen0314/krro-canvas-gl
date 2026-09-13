@@ -1,5 +1,7 @@
 package top.kzre.krro.canvas.gl.tile;
 
+import top.kzre.krro.canvas.gl.resource.GLTexture;
+
 /**
  * Atlas 工厂：为指定 unit 创建一个新的 {@link GLAtlas}。
  *
@@ -28,13 +30,8 @@ public interface GLAtlasFactory {
      * @param tileSize 每层边长（像素）
      * @param capacity 每 atlas 层数
      */
-    static GLAtlasFactory rgba8(int tileSize, int capacity) {
-        if (tileSize < 1) {
-            throw new IllegalArgumentException("tileSize must be >= 1: " + tileSize);
-        }
-        if (capacity < 1) {
-            throw new IllegalArgumentException("capacity must be >= 1: " + capacity);
-        }
-        return unit -> GLAtlas.createRgba8(unit, tileSize, capacity);
+     static GLAtlas createRgba8(int unit, int tileSize, int capacity) {
+        return new GLAtlas(
+                GLTexture.createRgba8(tileSize, tileSize, capacity), 64);
     }
 }

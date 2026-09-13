@@ -59,33 +59,27 @@ public final class GLTexture {
     // 内部状态
     // ═══════════════════════════════════════════════
 
-    private final int     handle;         // GL texture id
-    private final int     width;
-    private final int     height;
-    private final int     layers;         // texture array 层数；2D 场景为 1
-    private final int     internalFormat; // 如 GL_RGBA8
-    private final int     format;         // 如 GL_RGBA
-    private final int     type;           // 如 GL_UNSIGNED_BYTE
-    private final int     bytesPerPixel;  // 由 format + type 推导，构造时算好
+    private final int         handle;
+    private final int         width;
+    private final int         height;
+    private final int         layers;      // texture array 层数；2D 场景为 1
+    private final PixelFormat pixelFormat;
 
     private boolean released = false;
 
     // ═══════════════════════════════════════════════
     // 构造
     // ═══════════════════════════════════════════════
+    private int downloadFbo = 0;   // 懒创建的下载专用 FBO
 
     private GLTexture(int handle,
                       int width, int height, int layers,
-                      int internalFormat, int format, int type,
-                      int bytesPerPixel) {
-        this.handle         = handle;
-        this.width          = width;
-        this.height         = height;
-        this.layers         = layers;
-        this.internalFormat = internalFormat;
-        this.format         = format;
-        this.type           = type;
-        this.bytesPerPixel  = bytesPerPixel;
+                      PixelFormat pixelFormat) {
+        this.handle      = handle;
+        this.width       = width;
+        this.height      = height;
+        this.layers      = layers;
+        this.pixelFormat = pixelFormat;
     }
 
     // ═══════════════════════════════════════════════
@@ -102,24 +96,20 @@ public final class GLTexture {
      * @throws IllegalArgumentException 尺寸非法
      */
     public static GLTexture createRgba8(int width, int height, int layers) {
-        return create(width, height, layers,
-                GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
+        return create(width, height, layers, PixelFormat.RGBA8);
     }
 
     /**
      * 创建单层 RGBA8 纹理（2D 形态），常用于 FBO 颜色附着。
-     *
-     * @param width  宽（像素）
-     * @param height 高（像素）
      */
     public static GLTexture createRgba8(int width, int height) {
         return createRgba8(width, height, 1);
     }
 
     /**
-     * 通用创建：指定 internal format / format / type。
+     * 通用创建：指定像素格式。
      *
-     * <p>创建过程会：
+     * <p>创建过程：
      * <ol>
      *   <li>生成纹理句柄；</li>
      *   <li>绑定到 {@code GL_TEXTURE_2D_ARRAY}；</li>
@@ -130,30 +120,29 @@ public final class GLTexture {
      *
      * <p>若过程中抛异常，已生成的纹理句柄会被释放，不泄漏。
      *
-     * @param width          宽（像素），必须 &gt; 0
-     * @param height         高（像素），必须 &gt; 0
-     * @param layers         层数，必须 &gt; 0
-     * @param internalFormat GL 内部格式（如 {@code GL_RGBA8}）
-     * @param format         客户端数据格式（如 {@code GL_RGBA}），
-     *                       用于后续 {@code uploadLayer} / {@code downloadLayer}
-     * @param type           客户端数据类型（如 {@code GL_UNSIGNED_BYTE}）
+     * @param width       宽（像素），必须 &gt; 0
+     * @param height      高（像素），必须 &gt; 0
+     * @param layers      层数，必须 &gt; 0
+     * @param pixelFormat 像素格式，决定 internalFormat / clientFormat /
+     *                    clientType / bytesPerPixel
      * @return 新的纹理对象；调用方拥有所有权
-     * @throws IllegalArgumentException     尺寸非法，或 format / type 组合不支持
-     * @throws UnsupportedOperationException format / type 组合未在本类中实现
+     * @throws IllegalArgumentException 参数非法
      */
     public static GLTexture create(int width, int height, int layers,
-                                   int internalFormat, int format, int type) {
+                                   PixelFormat pixelFormat) {
         if (width <= 0 || height <= 0 || layers <= 0) {
             throw new IllegalArgumentException(
                     "invalid dims: " + width + "x" + height + "x" + layers);
         }
+        if (pixelFormat == null) {
+            throw new IllegalArgumentException("pixelFormat must not be null");
+        }
 
-        int bpp    = computeBytesPerPixel(format, type);
         int handle = glGenTextures();
         try {
             glBindTexture(GL_TEXTURE_2D_ARRAY, handle);
             try {
-                allocateStorage(width, height, layers, internalFormat, format, type);
+                allocateStorage(width, height, layers, pixelFormat);
 
                 glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
                 glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -168,8 +157,7 @@ public final class GLTexture {
             throw t;
         }
 
-        return new GLTexture(handle, width, height, layers,
-                internalFormat, format, type, bpp);
+        return new GLTexture(handle, width, height, layers, pixelFormat);
     }
 
     /**
@@ -179,18 +167,22 @@ public final class GLTexture {
      * 本方法不管理绑定状态，也不解绑。
      */
     private static void allocateStorage(int width, int height, int layers,
-                                        int internalFormat, int format, int type) {
+                                        PixelFormat pixelFormat) {
+        int internal = pixelFormat.getInternalFormat();
         GLCapabilities caps = GL.getCapabilities();
         if (caps.OpenGL42) {
             GL42.glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1,
-                    internalFormat, width, height, layers);
+                    internal, width, height, layers);
         } else if (caps.GL_ARB_texture_storage) {
             ARBTextureStorage.glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1,
-                    internalFormat, width, height, layers);
+                    internal, width, height, layers);
         } else {
             GL12.glTexImage3D(GL_TEXTURE_2D_ARRAY, 0,
-                    internalFormat, width, height, layers,
-                    0, format, type, (ByteBuffer) null);
+                    internal, width, height, layers,
+                    0,
+                    pixelFormat.getFormat(),
+                    pixelFormat.getType(),
+                    (ByteBuffer) null);
         }
     }
 
@@ -205,7 +197,8 @@ public final class GLTexture {
      * 调用方可以立即复用 / 释放 buffer。
      *
      * @param layer 层索引，{@code 0 <= layer < layers}
-     * @param data  CPU 侧像素数据，大小至少 {@code width * height * bytesPerPixel}
+     * @param data  CPU 侧像素数据，大小至少
+     *              {@code width * height * pixelFormat.getBytesPerPixel()}
      * @throws IllegalStateException     纹理已释放
      * @throws IndexOutOfBoundsException layer 越界
      */
@@ -218,7 +211,9 @@ public final class GLTexture {
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0,
                     0, 0, layer,
                     width, height, 1,
-                    format, type, data);
+                    pixelFormat.getFormat(),
+                    pixelFormat.getType(),
+                    data);
         } finally {
             glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
         }
@@ -235,7 +230,8 @@ public final class GLTexture {
      * @param y     区域左上角 y
      * @param w     区域宽
      * @param h     区域高
-     * @param data  像素数据，大小至少 {@code w * h * bytesPerPixel}
+     * @param data  像素数据，大小至少
+     *              {@code w * h * pixelFormat.getBytesPerPixel()}
      * @throws IllegalStateException     纹理已释放
      * @throws IndexOutOfBoundsException layer 或区域越界
      */
@@ -249,18 +245,56 @@ public final class GLTexture {
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0,
                     x, y, layer,
                     w, h, 1,
-                    format, type, data);
+                    pixelFormat.getFormat(),
+                    pixelFormat.getType(),
+                    data);
         } finally {
             glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
         }
     }
 
     /**
-     * 下载指定层的数据到 CPU。
+     * 下载指定层的整个内容到 CPU。
+     *
+     * <p>返回的 buffer 由 {@link MemoryUtil#memAlloc} 分配，<b>调用方负责释放</b>。
+     *
+     * @param layer 层索引
+     * @return 新分配的堆外 buffer，大小
+     *         {@code width * height * pixelFormat.getBytesPerPixel()}
+     */
+    public ByteBuffer downloadLayer(int layer) {
+        checkAlive();
+        checkLayer(layer);
+
+        ByteBuffer buffer = MemoryUtil.memAlloc(
+                width * height * pixelFormat.getBytesPerPixel());
+        glBindTexture(GL_TEXTURE_2D_ARRAY, handle);
+        try {
+            glGetTexImage(GL_TEXTURE_2D_ARRAY, 0,
+                    pixelFormat.getFormat(),
+                    pixelFormat.getType(),
+                    buffer);
+        } finally {
+            glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+        }
+        return buffer;
+    }
+
+    /**
+     * 下载指定层的矩形区域到 CPU。
+     *
+     * <p>只读取 {@code (x, y, w, h)} 覆盖的像素，不下载整层。
+     * 坐标原点在左下角（与 {@link #uploadRegion} 对称）。
+     *
+     * <p>内部使用一个懒创建的下载专用 FBO——避免每次调用都
+     * {@code glGenFramebuffers} / {@code glDeleteFramebuffers}。
+     *
+     * <p><b>性能提示</b>：{@code glReadPixels} 会同步等待 GPU 完成
+     * 之前的绘制命令。仅在最终输出时调用。
      *
      * <p>返回的 buffer 由 {@link MemoryUtil#memAlloc} 分配，<b>调用方负责释放</b>：
      * <pre>{@code
-     * ByteBuffer buf = texture.downloadLayer(0);
+     * ByteBuffer buf = texture.downloadRegion(0, 64, 64, 64, 64);
      * try {
      *     // 使用 buf
      * } finally {
@@ -269,20 +303,38 @@ public final class GLTexture {
      * }</pre>
      *
      * @param layer 层索引，{@code 0 <= layer < layers}
-     * @return 新分配的堆外 buffer，大小 {@code width * height * bytesPerPixel}
+     * @param x     区域左下角 x
+     * @param y     区域左下角 y
+     * @param w     区域宽
+     * @param h     区域高
+     * @return 新分配的堆外 buffer，大小
+     *         {@code w * h * pixelFormat.getBytesPerPixel()}
      * @throws IllegalStateException     纹理已释放
-     * @throws IndexOutOfBoundsException layer 越界
+     * @throws IndexOutOfBoundsException layer 或区域越界
      */
-    public ByteBuffer downloadLayer(int layer) {
+    public ByteBuffer downloadRegion(int layer, int x, int y, int w, int h) {
         checkAlive();
         checkLayer(layer);
+        checkRegion(x, y, w, h);
 
-        ByteBuffer buffer = MemoryUtil.memAlloc(width * height * bytesPerPixel);
-        glBindTexture(GL_TEXTURE_2D_ARRAY, handle);
+        if (downloadFbo == 0) {
+            downloadFbo = glGenFramebuffers();
+        }
+
+        ByteBuffer buffer = MemoryUtil.memAlloc(w * h * pixelFormat.getBytesPerPixel());
+
+        int prevFbo = glGetInteger(GL_FRAMEBUFFER_BINDING);
+        glBindFramebuffer(GL_FRAMEBUFFER, downloadFbo);
         try {
-            glGetTexImage(GL_TEXTURE_2D_ARRAY, 0, format, type, buffer);
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                    handle, 0, layer);
+            glReadPixels(x, y, w, h,
+                    pixelFormat.getFormat(),
+                    pixelFormat.getType(),
+                    buffer);
         } finally {
-            glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+            // 恢复到调用前的 FBO 绑定——避免污染渲染状态
+            glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
         }
         return buffer;
     }
@@ -328,6 +380,10 @@ public final class GLTexture {
      */
     public void release() {
         if (released) return;
+        if (downloadFbo != 0) {
+            glDeleteFramebuffers(downloadFbo);
+            downloadFbo = 0;
+        }
         glDeleteTextures(handle);
         released = true;
     }
@@ -337,74 +393,23 @@ public final class GLTexture {
     // ═══════════════════════════════════════════════
 
     /** GL 纹理句柄。 */
-    public int getHandle()         { return handle; }
+    public int getHandle()              { return handle; }
     /** 宽（像素）。 */
-    public int getWidth()          { return width; }
+    public int getWidth()               { return width; }
     /** 高（像素）。 */
-    public int getHeight()         { return height; }
+    public int getHeight()              { return height; }
     /** 层数（tile 数量）。 */
-    public int getLayers()         { return layers; }
-    /** GL 内部格式。 */
-    public int getInternalFormat() { return internalFormat; }
-    /** 客户端数据格式。 */
-    public int getFormat()         { return format; }
-    /** 客户端数据类型。 */
-    public int getType()           { return type; }
-    /** 每像素字节数，由 format + type 推导。 */
-    public int getBytesPerPixel()  { return bytesPerPixel; }
+    public int getLayers()              { return layers; }
+    /** 像素格式。 */
+    public PixelFormat getPixelFormat() { return pixelFormat; }
+    /** 每像素字节数（从 pixelFormat 取）。 */
+    public int getBytesPerPixel()       { return pixelFormat.getBytesPerPixel(); }
     /** 是否已经释放。 */
-    public boolean isReleased() { return released; }
+    public boolean isReleased()         { return released; }
 
     // ═══════════════════════════════════════════════
     // 内部
     // ═══════════════════════════════════════════════
-
-    /**
-     * 由 format + type 推导每像素字节数。
-     *
-     * <p>只覆盖本类当前支持的组合。若需扩展（如浮点、half-float、
-     * 整数格式），在此处新增分支即可。
-     */
-    private static int computeBytesPerPixel(int format, int type) {
-        int channels;
-        switch (format) {
-            case GL_RGBA:
-            case GL_BGRA:
-                channels = 4; break;
-            case GL_RGB:
-            case GL_BGR:
-                channels = 3; break;
-            case GL_RG:
-                channels = 2; break;
-            case GL_RED:
-                channels = 1; break;
-            default:
-                throw new UnsupportedOperationException(
-                        "bytesPerPixel: unknown format 0x"
-                                + Integer.toHexString(format));
-        }
-
-        int bytesPerChannel;
-        switch (type) {
-            case GL_UNSIGNED_BYTE:
-            case GL_BYTE:
-                bytesPerChannel = 1; break;
-            case GL_UNSIGNED_SHORT:
-            case GL_SHORT:
-            case GL_HALF_FLOAT:
-                bytesPerChannel = 2; break;
-            case GL_UNSIGNED_INT:
-            case GL_INT:
-            case GL_FLOAT:
-                bytesPerChannel = 4; break;
-            default:
-                throw new UnsupportedOperationException(
-                        "bytesPerPixel: unknown type 0x"
-                                + Integer.toHexString(type));
-        }
-
-        return channels * bytesPerChannel;
-    }
 
     private void checkAlive() {
         if (released) {
