@@ -8,7 +8,7 @@
 #*#
 .idea/
 .clj-kondo/
-krro-plugin-painting-gl-renderer.iml
+krro-canvas-gl.iml
 
 target/
 .nrepl-port

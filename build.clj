@@ -1,12 +1,12 @@
 (ns build
   (:require [clojure.tools.build.api :as b]))
 
-(def lib 'top.kzre/krro-plugin-painting-gl-renderer)
+(def lib 'top.kzre/krro-canvas-gl)
 (def version "0.1.0")
 (def class-dir "target/classes")
 (def basis (b/create-basis {:project "deps.edn"}))
-(def jar-file "target/krro-plugin-painting-gl-renderer-0.1.0.jar")            ;; 硬编码，与 Makefile 一致
-(def uber-file "target/krro-plugin-painting-gl-renderer-0.1.0-standalone.jar")
+(def jar-file "target/krro-canvas-gl-0.1.0.jar")            ;; 硬编码，与 Makefile 一致
+(def uber-file "target/krro-canvas-gl-0.1.0-standalone.jar")
 
 (defn clean [_]
       (b/delete {:path "target"}))
@@ -33,15 +33,15 @@
 
 (defn jar [_]
       (clean nil)
-      (compile-java nil)
+      ;(compile-java nil)
       (b/write-pom {:class-dir class-dir
                     :lib lib
                     :version version
                     :basis basis
                     :src-dirs ["src"]
-                    :scm {:url "https://github.com/topkzre/krro-plugin-painting-gl-renderer"
-                          :connection "scm:git:git://github.com/topkzre/krro-plugin-painting-gl-renderer.git"
-                          :developerConnection "scm:git:ssh://git@github.com:topkzre/krro-plugin-painting-gl-renderer.git"}})
+                    :scm {:url "https://github.com/topkzre/krro-canvas-gl"
+                          :connection "scm:git:git://github.com/topkzre/krro-canvas-gl.git"
+                          :developerConnection "scm:git:ssh://git@github.com:topkzre/krro-canvas-gl.git"}})
       (copy-clj-sources)
       (b/copy-dir {:src-dirs [ "resources"] :target-dir class-dir})
       (b/jar {:class-dir class-dir
