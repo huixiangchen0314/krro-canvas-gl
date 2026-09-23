@@ -3,6 +3,7 @@ package top.kzre.krro.canvas.gl.tile;
 import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.UploadableTile;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
+import top.kzre.krro.canvas.gl.resource.PixelCodec;
 import top.kzre.krro.canvas.gl.resource.PixelFormat;
 import top.kzre.krro.util.tile.*;
 
@@ -96,18 +97,6 @@ public final class GLAtlas {
         this.released      = false;
     }
 
-    /**
-     * 创建 RGBA8 atlas：{@code layerSize / tileSize} 决定层内网格。
-     *
-     * @param layerSize 层边长（像素），必须为 tileSize 的倍数
-     * @param tileSize  瓦片边长（像素）
-     * @param layers    层数
-     */
-    public static GLAtlas createRgba8(int layerSize, int tileSize, int layers) {
-        return new GLAtlas(
-                GLTexture.createRgba8(layerSize, layerSize, layers),
-                tileSize);
-    }
 
     /**
      * 绑定 atlas 到指定纹理单元。
@@ -481,53 +470,30 @@ public final class GLAtlas {
 
         private void upload() {
             int tileSize = handle.getTileSize();
+            int pixelCount = tileSize * tileSize;
             PixelFormat fmt = handle.getPixelFormat();
-            int expectedFloats = fmt.tileFloats(tileSize);
-            int expectedBytes  = expectedFloats * Float.BYTES;
 
-            if (peer instanceof DirectTileData) {
-                DirectTileData d = (DirectTileData) peer;
-                uploadSliced(d.buffer(), expectedBytes);
-            } else if (peer instanceof MappedTileData) {
-                MappedTileData s = (MappedTileData) peer;
-                uploadSliced(s.mapping(), expectedBytes);
-            } else if (peer instanceof HeapTileData) {
-                HeapTileData h = (HeapTileData) peer;
-                FloatBuffer src = h.floatBuffer();
-                if (src.remaining() < expectedFloats) {
-                    throw new IllegalStateException(
-                            "peer data too small: expected " + expectedFloats
-                                    + " floats, got " + src.remaining());
-                }
-                ByteBuffer tmp = MemoryUtil.memAlloc(expectedBytes);
-                try {
-                    FloatBuffer dst = tmp.asFloatBuffer();
-                    FloatBuffer slice = src.slice();
-                    slice.limit(expectedFloats);
-                    dst.put(slice);
-                    handle.upload(tmp);
-                } finally {
-                    MemoryUtil.memFree(tmp);
-                }
-            } else {
-                throw new UnsupportedOperationException(
-                        "unsupported peer type: " + peer.getClass().getName());
-            }
-        }
-
-        /**
-         * 用 slice 限制上传范围——只传前 {@code expectedBytes} 字节。
-         */
-        private void uploadSliced(ByteBuffer buf, int expectedBytes) {
-            if (buf.remaining() < expectedBytes) {
+            FloatBuffer src = peer.floatBuffer();
+            int needFloats = PixelCodec.cpuFloats(fmt, pixelCount);
+            if (src.remaining() < needFloats) {
                 throw new IllegalStateException(
-                        "peer buffer too small: expected " + expectedBytes
-                                + " bytes, got " + buf.remaining());
+                        "peer data too small: expected " + needFloats
+                                + " floats, got " + src.remaining());
             }
-            ByteBuffer slice = buf.slice();
-            slice.limit(expectedBytes);
-            handle.upload(slice);
+
+            int needBytes = PixelCodec.gpuBytes(fmt, pixelCount);
+            ByteBuffer tmp = MemoryUtil.memAlloc(needBytes);
+            try {
+                FloatBuffer slice = src.slice();
+                slice.limit(needFloats);
+                PixelCodec.pack(fmt, slice, pixelCount, tmp);
+                tmp.flip();
+                handle.upload(tmp);
+            } finally {
+                MemoryUtil.memFree(tmp);
+            }
         }
+
     }
 
 }

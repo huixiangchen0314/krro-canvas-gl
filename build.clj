@@ -33,7 +33,7 @@
 
 (defn jar [_]
       (clean nil)
-      ;(compile-java nil)
+      (compile-java nil)
       (b/write-pom {:class-dir class-dir
                     :lib lib
                     :version version

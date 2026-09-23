@@ -1,7 +1,5 @@
 package top.kzre.krro.canvas.gl.tile;
 
-import top.kzre.krro.canvas.gl.resource.GLTexture;
-
 /**
  * Atlas 工厂：为指定 unit 创建一个新的 {@link GLAtlas}。
  *
@@ -15,22 +13,6 @@ import top.kzre.krro.canvas.gl.resource.GLTexture;
 @FunctionalInterface
 public interface GLAtlasFactory {
 
-    /**
-     * 为指定 unit 创建 atlas。
-     *
-     * @return 新的 atlas，非 null
-     * @throws RuntimeException GL 资源创建失败
-     */
     GLAtlas create();
 
-    /**
-     * 常用工厂：RGBA8 纹理数组。
-     *
-     * @param tileSize 每层边长（像素）
-     * @param layers 每 atlas 层数
-     */
-     static GLAtlas createRgba8(int tileSize, int layers) {
-        return new GLAtlas(
-                GLTexture.createRgba8(tileSize, tileSize, layers), tileSize);
-    }
 }

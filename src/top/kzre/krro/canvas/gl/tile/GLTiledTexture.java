@@ -3,14 +3,15 @@ package top.kzre.krro.canvas.gl.tile;
 import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.DownloadableTile;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
+import top.kzre.krro.canvas.gl.resource.PixelCodec;
 import top.kzre.krro.canvas.gl.resource.PixelFormat;
+import top.kzre.krro.core.util.AsyncExecutor;
 import top.kzre.krro.util.tile.AbstractTileData;
 import top.kzre.krro.util.tile.TileData;
 import top.kzre.krro.util.tile.TiledCanvas;
 
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
-import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -44,7 +45,7 @@ public final class GLTiledTexture {
 
     private final GLTexture texture;
     private final TiledCanvas canvas;
-    private final Executor  glExecutor;
+    private final AsyncExecutor glExecutor;
 
     /** 活跃视图计数——归零时自动释放纹理。 */
     private final AtomicInteger activeTiles = new AtomicInteger(0);
@@ -55,7 +56,7 @@ public final class GLTiledTexture {
     /** 是否已释放——归零后为 true，防止重复释放。 */
     private volatile boolean released = false;
 
-    public GLTiledTexture(GLTexture texture, int tileSize, Executor glExecutor) {
+    public GLTiledTexture(GLTexture texture, int tileSize, AsyncExecutor glExecutor) {
         if (texture == null) {
             throw new IllegalArgumentException("texture must not be null");
         }
@@ -82,15 +83,15 @@ public final class GLTiledTexture {
     }
 
     private TiledCanvas buildTiledCanvas(GLTexture texture, int tileSize) {
-        int gridSize = texture.getWidth() / tileSize;
+        int tilesPerEdge = texture.getWidth() / tileSize;
         int layers   = texture.getLayers();
 
         TiledCanvas c = new TiledCanvas(tileSize);
         for (int layer = 0; layer < layers; layer++) {
-            for (int sy = 0; sy < gridSize; sy++) {
-                for (int sx = 0; sx < gridSize; sx++) {
+            for (int sy = 0; sy < tilesPerEdge; sy++) {
+                for (int sx = 0; sx < tilesPerEdge; sx++) {
                     int tx = sx;
-                    int ty = layer * gridSize + sy;
+                    int ty = layer * tilesPerEdge + sy;
                     activeTiles.incrementAndGet();
                     GLTextureTileData view = new GLTextureTileData(this, layer, sx, sy);
                     c.replaceTile(tx, ty, view);
@@ -164,7 +165,13 @@ public final class GLTiledTexture {
         }
         if (remaining == 0 && !released) {
             released = true;
-            glExecutor.execute(texture::release);
+            glExecutor.submit(texture::release)
+                    .handle((v, e)->{
+                        if(e != null) {
+                            System.err.println("GLTiledTexture release failed");
+                        }
+                        return v;
+                    });
         }
     }
 
@@ -205,14 +212,38 @@ public final class GLTiledTexture {
 
         @Override
         public void downloadTo(TiledCanvas target, int tx, int ty) {
-            assertRgba8(target);
             int ts = owner.tileSize();
+            int targetTs = target.getTileSize();
+            if (ts != targetTs) {
+                throw new IllegalArgumentException(
+                        "tile size mismatch: source=" + ts + ", target=" + targetTs);
+            }
+
+            int pixelCount = ts * ts;
+            PixelFormat fmt = owner.texture().getPixelFormat();
+
+            int channels = PixelCodec.channels(fmt);
+            int targetChannels = target.getChannels();
+            if (channels != targetChannels) {
+                throw new IllegalArgumentException(
+                        "channel mismatch: format=" + channels
+                                + ", canvas=" + targetChannels
+                                + ", fmt=" + fmt);
+            }
 
             ByteBuffer packed = owner.texture().downloadRegion(
                     layer, sx * ts, sy * ts, ts, ts);
             try {
-                ByteBuffer unpacked = unpackRgba8(packed, ts * ts);
-                target.replaceTile(tx, ty, unpacked);
+                int needFloats = PixelCodec.cpuFloats(fmt, pixelCount);
+                ByteBuffer out = MemoryUtil.memAlloc(needFloats * Float.BYTES);
+                try {
+                    FloatBuffer dst = out.asFloatBuffer();
+                    PixelCodec.unpack(fmt, packed, pixelCount, dst);
+                    dst.flip();
+                    target.replaceTile(tx, ty, out);
+                } finally {
+                    MemoryUtil.memFree(out);
+                }
             } finally {
                 MemoryUtil.memFree(packed);
             }
@@ -229,7 +260,7 @@ public final class GLTiledTexture {
         public int getByteSize() {
             PixelFormat fmt = owner.texture().getPixelFormat();
             int ts = owner.tileSize();
-            return ts * ts * fmt.getBytesPerPixel();
+            return ts * ts * fmt.internalBytesPerPixel();
         }
 
         // ── CPU 侧访问：不支持 ───────────────────────
@@ -248,33 +279,6 @@ public final class GLTiledTexture {
         public TileData copy() {
             throw new UnsupportedOperationException(
                     "GLTextureTileData cannot be copied");
-        }
-
-        private void assertRgba8(TiledCanvas target) {
-            if (owner.texture().getPixelFormat() != PixelFormat.RGBA8) {
-                throw new UnsupportedOperationException(
-                        "downloadTo only supports RGBA8; got "
-                                + owner.texture().getPixelFormat());
-            }
-            if (target.getChannels() != 4) {
-                throw new IllegalStateException(
-                        "TiledCanvas.channels must be 4, got " + target.getChannels());
-            }
-        }
-
-        private static ByteBuffer unpackRgba8(ByteBuffer packed, int pixelCount) {
-            ByteBuffer out = MemoryUtil.memAlloc(pixelCount * 4 * Float.BYTES);
-            FloatBuffer dst = out.asFloatBuffer();
-            ByteBuffer src  = packed.duplicate();
-            for (int i = 0; i < pixelCount; i++) {
-                int rgba = src.getInt();
-                dst.put(((rgba >> 24) & 0xFF) / 255f);
-                dst.put(((rgba >> 16) & 0xFF) / 255f);
-                dst.put(((rgba >>  8) & 0xFF) / 255f);
-                dst.put(( rgba        & 0xFF) / 255f);
-            }
-            dst.flip();
-            return out;
         }
 
 

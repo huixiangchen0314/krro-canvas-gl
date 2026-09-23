@@ -168,7 +168,7 @@ public final class GLTexture {
      */
     private static void allocateStorage(int width, int height, int layers,
                                         PixelFormat pixelFormat) {
-        int internal = pixelFormat.getInternalFormat();
+        int internal = pixelFormat.getGlInternalFormat();
         GLCapabilities caps = GL.getCapabilities();
         if (caps.OpenGL42) {
             GL42.glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1,
@@ -180,8 +180,8 @@ public final class GLTexture {
             GL12.glTexImage3D(GL_TEXTURE_2D_ARRAY, 0,
                     internal, width, height, layers,
                     0,
-                    pixelFormat.getFormat(),
-                    pixelFormat.getType(),
+                    pixelFormat.getGlClientFormat(),
+                    pixelFormat.getGlType(),
                     (ByteBuffer) null);
         }
     }
@@ -211,8 +211,8 @@ public final class GLTexture {
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0,
                     0, 0, layer,
                     width, height, 1,
-                    pixelFormat.getFormat(),
-                    pixelFormat.getType(),
+                    pixelFormat.getGlClientFormat(),
+                    pixelFormat.getGlType(),
                     data);
         } finally {
             glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
@@ -245,8 +245,8 @@ public final class GLTexture {
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0,
                     x, y, layer,
                     w, h, 1,
-                    pixelFormat.getFormat(),
-                    pixelFormat.getType(),
+                    pixelFormat.getGlClientFormat(),
+                    pixelFormat.getGlType(),
                     data);
         } finally {
             glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
@@ -267,12 +267,12 @@ public final class GLTexture {
         checkLayer(layer);
 
         ByteBuffer buffer = MemoryUtil.memAlloc(
-                width * height * pixelFormat.getBytesPerPixel());
+                width * height * pixelFormat.internalBytesPerPixel());
         glBindTexture(GL_TEXTURE_2D_ARRAY, handle);
         try {
             glGetTexImage(GL_TEXTURE_2D_ARRAY, 0,
-                    pixelFormat.getFormat(),
-                    pixelFormat.getType(),
+                    pixelFormat.getGlClientFormat(),
+                    pixelFormat.getGlType(),
                     buffer);
         } finally {
             glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
@@ -321,7 +321,7 @@ public final class GLTexture {
             downloadFbo = glGenFramebuffers();
         }
 
-        ByteBuffer buffer = MemoryUtil.memAlloc(w * h * pixelFormat.getBytesPerPixel());
+        ByteBuffer buffer = MemoryUtil.memAlloc(w * h * pixelFormat.internalBytesPerPixel());
 
         int prevFbo = glGetInteger(GL_FRAMEBUFFER_BINDING);
         glBindFramebuffer(GL_FRAMEBUFFER, downloadFbo);
@@ -329,8 +329,8 @@ public final class GLTexture {
             glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                     handle, 0, layer);
             glReadPixels(x, y, w, h,
-                    pixelFormat.getFormat(),
-                    pixelFormat.getType(),
+                    pixelFormat.getGlClientFormat(),
+                    pixelFormat.getGlType(),
                     buffer);
         } finally {
             // 恢复到调用前的 FBO 绑定——避免污染渲染状态
@@ -403,7 +403,7 @@ public final class GLTexture {
     /** 像素格式。 */
     public PixelFormat getPixelFormat() { return pixelFormat; }
     /** 每像素字节数（从 pixelFormat 取）。 */
-    public int getBytesPerPixel()       { return pixelFormat.getBytesPerPixel(); }
+    public int getBytesPerPixel()       { return pixelFormat.internalBytesPerPixel(); }
     /** 是否已经释放。 */
     public boolean isReleased()         { return released; }
 
