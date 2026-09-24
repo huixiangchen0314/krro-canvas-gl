@@ -2,9 +2,7 @@ package top.kzre.krro.canvas.gl.tile;
 
 import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.DownloadableTile;
-import top.kzre.krro.canvas.gl.resource.GLTexture;
-import top.kzre.krro.canvas.gl.resource.PixelCodec;
-import top.kzre.krro.canvas.gl.resource.PixelFormat;
+import top.kzre.krro.canvas.gl.resource.*;
 import top.kzre.krro.core.util.AsyncExecutor;
 import top.kzre.krro.util.tile.AbstractTileData;
 import top.kzre.krro.util.tile.TileData;
@@ -49,10 +47,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  *       {@link IllegalArgumentException}。</li>
  * </ul>
  */
-public final class GLTiledTexture {
+public final class GLTiledTexture implements GLBindable {
 
     private final GLTexture texture;
     private final TiledCanvas canvas;
+    private final GLTexturePool texPool;
     private final AsyncExecutor glExecutor;
 
     /** 活跃视图计数——归零时自动释放纹理。 */
@@ -64,14 +63,15 @@ public final class GLTiledTexture {
     /** 是否已释放——归零后为 true，防止重复释放。 */
     private volatile boolean released = false;
 
-    public GLTiledTexture(GLTexture texture, int tileSize, AsyncExecutor glExecutor) {
+    public GLTiledTexture(GLTexture texture, int tileSize, GLTexturePool texPool, AsyncExecutor glExecutor) {
+        this.glExecutor = glExecutor;
         if (texture == null) {
             throw new IllegalArgumentException("texture must not be null");
         }
         if (tileSize < 1) {
             throw new IllegalArgumentException("tileSize must be >= 1: " + tileSize);
         }
-        if (glExecutor == null) {
+        if (texPool == null) {
             throw new IllegalArgumentException("glExecutor must not be null");
         }
         if (texture.getWidth() != texture.getHeight()) {
@@ -86,7 +86,7 @@ public final class GLTiledTexture {
         }
 
         this.texture    = texture;
-        this.glExecutor = glExecutor;
+        this.texPool = texPool;
         this.canvas     = buildTiledCanvas(texture, tileSize);
     }
 
@@ -130,6 +130,7 @@ public final class GLTiledTexture {
      * @throws IllegalArgumentException unit &lt; 0
      * @throws IllegalStateException    纹理已释放
      */
+    @Override
     public void bind(int unit) {
         if (unit < 0) {
             throw new IllegalArgumentException("unit must be >= 0, got " + unit);
@@ -174,13 +175,7 @@ public final class GLTiledTexture {
         }
         if (remaining == 0 && !released) {
             released = true;
-            glExecutor.submit(texture::release)
-                    .handle((v, e)->{
-                        if(e != null) {
-                            System.err.println("GLTiledTexture release failed");
-                        }
-                        return v;
-                    });
+            texPool.release(texture);
         }
     }
 

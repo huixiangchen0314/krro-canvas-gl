@@ -1,33 +1,32 @@
+// composite-normal-simple.vert
 #version 330 core
 
 // ═══════════════════════════════════════════════
 // 逐顶点 attribute
 // ═══════════════════════════════════════════════
-layout(location = 0) in vec2 aPos;        // 单位四边形 [0,1]²
+layout(location = 0) in vec2 aPos;       // 单位四边形 [0,1]²
 
 // ═══════════════════════════════════════════════
 // 逐实例 attribute
 // ═══════════════════════════════════════════════
-layout(location = 1) in vec4 aInstance;   // [tileX, tileY, offset, count]
+layout(location = 1) in vec4 aInstance;  // [tileX, tileY, offset, count]
 
 // ═══════════════════════════════════════════════
 // 全局 uniform
 // ═══════════════════════════════════════════════
-uniform vec2  uViewport;                  // 视口尺寸（像素）
-uniform float uTileSize;                  // 瓦片边长（像素）
+uniform vec2  uViewport;                 // 视口尺寸（已对齐到 tileSize 倍数）
+uniform float uTileSize;                 // 瓦片边长
 
 // ═══════════════════════════════════════════════
 // 传给 fragment
 // ═══════════════════════════════════════════════
-out vec2 vPixel;                          // 当前像素的视口坐标
-flat out int vOffset;                     // indexList 起始下标
-flat out int vCount;                      // 该屏幕瓦片覆盖的图层瓦片数
+out vec2  vPixel;
+flat out int vOffset;
+flat out int vCount;
 
 void main() {
-    // 屏幕瓦片坐标 → 视口坐标
     vec2 world = aInstance.xy * uTileSize + aPos * uTileSize;
 
-    // 视口坐标 → NDC，y 轴翻转（屏幕 y 向下）
     vec2 ndc = world / uViewport * 2.0 - 1.0;
     gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
 

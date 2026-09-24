@@ -2,9 +2,7 @@ package top.kzre.krro.canvas.gl.tile;
 
 import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.UploadableTile;
-import top.kzre.krro.canvas.gl.resource.GLTexture;
-import top.kzre.krro.canvas.gl.resource.PixelCodec;
-import top.kzre.krro.canvas.gl.resource.PixelFormat;
+import top.kzre.krro.canvas.gl.resource.*;
 import top.kzre.krro.util.tile.*;
 
 import java.nio.ByteBuffer;
@@ -39,13 +37,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li>{@link GLTileData#markDirty()} —— 任意线程</li>
  * </ul>
  */
-public final class GLAtlas {
+public final class GLAtlas implements GLBindable {
 
     /** 私有锁，避免外部用 {@code synchronized (atlas)} 干扰。 */
     private final Object lock = new Object();
 
     private final GLTexture texture;
     private final GLTiledTextureLayout layout;
+    private final GLTexturePool texPool;
 
     private final BitSet allocated;
     private final GLTileData[] tiles;
@@ -62,7 +61,8 @@ public final class GLAtlas {
      * @param layout  瓦片布局
      * @throws IllegalArgumentException 纹理维度与布局不一致
      */
-    public GLAtlas(GLTexture texture, GLTiledTextureLayout layout) {
+    public GLAtlas(GLTexture texture, GLTiledTextureLayout layout, GLTexturePool texPool) {
+        this.texPool = texPool;
         if (texture == null) {
             throw new IllegalArgumentException("texture must not be null");
         }
@@ -103,6 +103,7 @@ public final class GLAtlas {
      * @param unit 纹理单元索引，必须 ≥ 0
      * @throws IllegalArgumentException unit &lt; 0
      */
+    @Override
     public void bind(int unit) {
         if (unit < 0) {
             throw new IllegalArgumentException("unit must be >= 0, got " + unit);
@@ -378,7 +379,7 @@ public final class GLAtlas {
     public void release() {
         synchronized (lock) {
             if (released) return;
-            texture.release();
+            texPool.release(texture);
             allocated.clear();
             released = true;
         }

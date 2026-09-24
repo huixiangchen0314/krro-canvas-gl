@@ -14,18 +14,12 @@ import top.kzre.krro.canvas.gl.tile.GLAtlas;
  *       执行阶段按映射落实</li>
  * </ul>
  *
- * <p><b>atlas 数组即单元表</b>：{@link #getAtlases()} 返回的数组
- * 下标即纹理单元。null 位置表示该单元不绑定 atlas。
  *
  * <p><b>线程契约</b>：涉及 atlas 分配和 tile 替换，必须在 GL 线程
  * 上调用。{@code getAtlases} 是纯数据读取，任意线程可调。
  */
 public interface AtlasPoolPage {
 
-    /**
-     * 本页涉及的全部 atlas。下标即纹理单元，null 表示该单元不绑定。
-     */
-    GLAtlas[] getAtlases();
 
     /**
      * 把瓦片分配在指定 atlas 槽位。

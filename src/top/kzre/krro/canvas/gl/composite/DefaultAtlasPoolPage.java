@@ -18,17 +18,13 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
         this.atlases = atlases;
     }
 
-    @Override
-    public GLAtlas[] getAtlases() {
-        return atlases;
-    }
 
     @Override
     public boolean allocateAt(AtlasSlot slot, TileRef ref) {
-        int unit = slot.getUnit();
-        GLAtlas atlas = atlases[unit];
+        int idx  = slot.getAtlasIndex();
+        GLAtlas atlas = atlases[idx ];
         if (atlas == null) {
-            throw new IllegalArgumentException("No atlas with unit " + unit);
+            throw new IllegalArgumentException("No atlas with idx  " + idx );
         }
 
         int layer = slot.getLayer();

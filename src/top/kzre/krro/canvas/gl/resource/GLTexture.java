@@ -53,7 +53,7 @@ import static org.lwjgl.opengl.GL30.*;
  * <h2>幂等性</h2>
  * {@link #release()} 幂等。释放后所有其他方法抛 {@link IllegalStateException}。
  */
-public final class GLTexture {
+public final class GLTexture implements GLBindable{
 
     // ═══════════════════════════════════════════════
     // 内部状态
@@ -352,6 +352,7 @@ public final class GLTexture {
      * @param unit 纹理单元索引，{@code 0 <= unit < GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS}
      * @throws IllegalStateException 纹理已释放
      */
+    @Override
     public void bind(int unit) {
         checkAlive();
         glActiveTexture(GL_TEXTURE0 + unit);

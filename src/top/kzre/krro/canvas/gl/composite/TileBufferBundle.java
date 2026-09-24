@@ -1,69 +1,50 @@
 package top.kzre.krro.canvas.gl.composite;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import top.kzre.krro.canvas.gl.resource.GLBindable;
 
 /**
- * 瓦片缓冲区束。一次合成的完整资源清单。
+ * 瓦片缓冲区束。一次 draw call 的完整资源清单。
  *
  * <p><b>两部分</b>：
  * <ul>
- *   <li>{@code page} —— atlas 资源与换页能力</li>
- *   <li>{@code shaders} —— 按顺序执行的 shader 序列</li>
+ *   <li>{@code shader}    —— 本次 draw call 的着色器</li>
+ *   <li>{@code bindables} —— 需要绑定到纹理单元的资源数组，
+ *       下标即单元号</li>
  * </ul>
  *
- * <h2>atlas 通过 page 访问</h2>
+ * <p><b>AtlasPoolPage 不在这里</b>：换页能力属于整个 request，
+ * 不属于单个 bundle。多个 bundle 共享同一个 page，由
+ * {@link CompositeRequest} 持有。
  *
- * <p>atlas 数组由 {@link AtlasPoolPage#getAtlases()} 提供，下标即
- * 纹理单元。{@link TileBufferGroup} 的 tileEntries 里
- * {@code atlasIndex} 字段即该数组的下标，执行阶段
- * {@code atlases[atlasIndex].bind(atlasIndex)} 即可。
- *
- * <p>bundle 不重复持有 atlas 数组，避免和 page 的状态不一致。
- * 换页（{@link AtlasPoolPage#allocateAt}）和执行阶段绑定都用
- * 同一份数组。
- *
- * <h2>线程契约</h2>
- *
- * <p>纯数据，任意线程可构造和读取。绑定和执行动作由任务在 GL
- * 线程内完成。
+ * <p><b>线程契约</b>：纯数据，任意线程可构造和读取。
  */
 public final class TileBufferBundle {
 
-    /**
-     * atlas 资源与换页能力。atlas 数组下标即纹理单元。
-     */
-    private final AtlasPoolPage page;
+    private final Shader       shader;
+    private final GLBindable[] bindables;
 
-    /**
-     * 按顺序执行的 shader 列表。每个 shader 一次 draw call。
-     */
-    private final List<Shader> shaders;
-
-    public TileBufferBundle(AtlasPoolPage page, List<Shader> shaders) {
-        if (page == null || page.getAtlases().length == 0) {
-            throw new IllegalArgumentException("atlases must not be empty");
+    public TileBufferBundle(Shader shader, GLBindable[] bindables) {
+        if (shader == null) {
+            throw new IllegalArgumentException("shader must not be null");
         }
-        if (shaders == null) {
-            throw new IllegalArgumentException("shaders must not be null");
+        if (bindables == null) {
+            throw new IllegalArgumentException("bindables must not be null");
         }
-        for (Shader s : shaders) {
-            if (s == null) {
-                throw new IllegalArgumentException("shaders must not contain null");
-            }
-        }
-        this.page    = page;
-        this.shaders = Collections.unmodifiableList(new ArrayList<>(shaders));
+        this.shader    = shader;
+        this.bindables = bindables.clone();
     }
 
-    // ═══════════════════════════════════════════════
-    // 访问器
-    // ═══════════════════════════════════════════════
+    public Shader        getShader()    { return shader; }
 
-    /** atlas 资源与换页接口。 */
-    public AtlasPoolPage getPage() { return page; }
+    /**
+     * 需要绑定到纹理单元的资源。下标即单元号，null 位置跳过。
+     * 返回内部数组引用，调用方不得修改。
+     */
+    public GLBindable[]  getBindables() { return bindables; }
 
-    /** 按顺序执行的 shader 列表。 */
-    public List<Shader> getShaders() { return shaders; }
+    @Override
+    public String toString() {
+        return "TileBufferBundle{shader=" + shader.getClass().getSimpleName()
+                + ", bindables=" + bindables.length + "}";
+    }
 }

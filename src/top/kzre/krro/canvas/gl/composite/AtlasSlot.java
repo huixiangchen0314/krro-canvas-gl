@@ -29,9 +29,8 @@ package top.kzre.krro.canvas.gl.composite;
  */
 public final class AtlasSlot {
 
-    /** 纹理单元。 */
-    private final int unit;
-
+    /** atlas 在 AtlasPoolPage 中的下标。不是 GL 纹理单元。 */
+    private final int atlasIndex;
     /** texture array 层索引。 */
     private final int layer;
 
@@ -41,14 +40,14 @@ public final class AtlasSlot {
     /** 层内列坐标（u 方向）。 */
     private final int col;
 
-    public AtlasSlot(int unit, int layer, int row, int col) {
-        this.unit  = unit;
+    public AtlasSlot(int atlasIndex, int layer, int row, int col) {
+        this.atlasIndex = atlasIndex;
         this.layer = layer;
         this.row   = row;
         this.col   = col;
     }
 
-    public int getUnit()  { return unit; }
+    public int getAtlasIndex()  { return atlasIndex; }
     public int getLayer() { return layer; }
     public int getRow()   { return row; }
     public int getCol()   { return col; }
@@ -62,7 +61,7 @@ public final class AtlasSlot {
         if (this == o) return true;
         if (!(o instanceof AtlasSlot)) return false;
         AtlasSlot that = (AtlasSlot) o;
-        return unit  == that.unit
+        return atlasIndex == that.atlasIndex
                 && layer == that.layer
                 && row   == that.row
                 && col   == that.col;
@@ -70,7 +69,7 @@ public final class AtlasSlot {
 
     @Override
     public int hashCode() {
-        int h = unit;
+        int h = atlasIndex;
         h = 31 * h + layer;
         h = 31 * h + row;
         h = 31 * h + col;
@@ -79,7 +78,7 @@ public final class AtlasSlot {
 
     @Override
     public String toString() {
-        return "AtlasSlot{unit=" + unit
+        return "AtlasSlot{unit=" + atlasIndex
                 + ", layer=" + layer
                 + ", row=" + row
                 + ", col=" + col + "}";
