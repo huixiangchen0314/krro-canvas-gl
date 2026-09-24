@@ -1,5 +1,7 @@
 package top.kzre.krro.canvas.gl.composite;
 
+import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
+
 import java.util.List;
 
 public class CompositePlanner {
@@ -12,7 +14,9 @@ public class CompositePlanner {
      */
     public static CompositeRequest plan(
             List<ILayer> layers,
-            GLCompositeContext context){
+            GLCompositeContext context,
+            GLFramebuffer fboA,
+            GLFramebuffer fboB){
 
         return null;
 
