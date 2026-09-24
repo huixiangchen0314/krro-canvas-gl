@@ -9,47 +9,36 @@ import java.util.List;
  * 固定尺寸的 FBO 池。装饰 {@link FixedSizeTexturePool}，把池中
  * 纹理的每一层包装为一个 {@link GLFramebuffer}。
  *
- * <p><b>无容量上限</b>：FBO 是纹理层的借用视图，轻量。池本身不
- * 限制 FBO 数量——真正的资源约束在 {@link FixedSizeTexturePool}
- * 内部（缓存容量），而不是池的容量。
+ * <p><b>按需创建，峰值后回收</b>：每次 {@link #acquire()} 优先从
+ * 已有 slot 取空闲 FBO；全部占用时借一张新纹理创建新 slot。归还
+ * 时如果某个 slot 的全部 FBO 都空闲，该 slot 从池中移除，纹理
+ * 归还 texturePool。slot 数跟随实际并发持有量动态升降。
  *
- * <p><b>按需创建 slot</b>：每次 {@link #acquire()} 优先从已有的
- * {@link TextureSlot} 取空闲 FBO；全部占用时从 texturePool 借一张
- * 新纹理，创建新 slot。slot 数可能增长——它对应"用户同时持有的
- * 最大 FBO 数"。用户不归还导致的无界增长是内存泄漏，由用户负责。
+ * <p><b>无容量上限</b>：真正的资源约束在 {@link FixedSizeTexturePool}
+ * 的缓存策略。slot 数可能增长到"用户同时持有的最大 FBO 数"——
+ * 用户不归还导致的无界增长是用户侧的内存泄漏。
  *
- * <p><b>slot 的角色</b>：slot 维持纹理和 FBO 的强引用，用于
- * {@link #close()} 时统一释放。归还的 FBO 回到所属 slot 的空闲
- * 队列，供后续 acquire 复用。
+ * <p><b>无自有生命周期</b>：本池只是 texturePool 之上的视图层。
+ * {@link #close()} 转发给 texturePool，不拒绝用户归还。已借出的
+ * FBO 在归还时归还纹理——如果 texturePool 已关闭，纹理池会直接
+ * 释放它。
  *
- * <p><b>装饰语义</b>：构造时接管 texturePool 的所有权——本池关闭
- * 时一并关闭 texturePool。
- *
- * <p><b>关闭语义</b>：
- * <ul>
- *   <li>释放所有 FBO</li>
- *   <li>归还全部纹理给 texturePool</li>
- *   <li>关闭 texturePool</li>
- *   <li>有 FBO 借出未归还时抛异常</li>
- *   <li>重复 {@code close()} 抛异常</li>
- * </ul>
- *
- * <p><b>线程契约</b>：{@code acquire} / {@code release} 无 GL 调用
- * （FBO 在 slot 创建时已就绪），可在任意线程。{@code close} 涉及
- * GL 调用，通过 delegate 投递到 GL 线程。
+ * <p><b>线程契约</b>：{@code acquire} / {@code release} 涉及
+ * texturePool 的借还，但 texturePool 的操作不调 GL（GL 释放由
+ * delegate 投递），所以可在任意线程。{@code close} 转发给
+ * texturePool，其 GL 释放也由 delegate 处理。
  */
 public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCloseable {
 
     private final FixedSizeTexturePool texturePool;
 
-    /** 已创建的 slot。按需增长，无上限。 */
+    /** 已创建的 slot。随 acquire/release 动态增减。 */
     private final List<TextureSlot> slots = new ArrayList<>();
 
-    /** 借出中的 FBO 计数。用于 close 前置检查，避免遍历。 */
+    /** 借出中的 FBO 计数。 */
     private int activeCount = 0;
 
     private final Object lock = new Object();
-    private volatile boolean closed = false;
 
     /**
      * 装饰 texturePool。
@@ -76,18 +65,12 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
      * {@link #release(GLFramebuffer)} 归还。
      *
      * <p>优先复用已有 slot 的空闲 FBO；全部占用时从 texturePool
-     * 借一张新纹理创建新 slot。无容量上限——纹理池内部按需创建，
-     * 真正约束在纹理池的缓存策略。
+     * 借一张新纹理创建新 slot。
      *
-     * @throws IllegalStateException 池已关闭
+     * @throws IllegalStateException texturePool 已关闭
      */
     public GLFramebuffer acquire() {
-        if (closed) {
-            throw new IllegalStateException("pool is closed");
-        }
-
         synchronized (lock) {
-            // 优先复用已有 slot
             for (TextureSlot slot : slots) {
                 GLFramebuffer fbo = slot.tryAcquire();
                 if (fbo != null) {
@@ -96,7 +79,6 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
                 }
             }
 
-            // 全部占用——借新纹理，创建新 slot
             GLTexture tex = texturePool.acquire();
             TextureSlot slot = new TextureSlot(tex);
             slots.add(slot);
@@ -110,24 +92,31 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
     // ═══════════════════════════════════════════════
 
     /**
-     * 归还 FBO。池未关闭时放回所属 slot；已关闭时抛异常。
+     * 归还 FBO。
      *
-     * <p>不属于本池的 FBO 抛异常——静默忽略会导致 FBO 永久泄漏
-     * （另一个池永远收不到它）。
+     * <p>归还后如果所属 slot 的全部 FBO 都空闲，该 slot 从池中移除，
+     * 纹理归还 texturePool——峰值过后 slot 数回落。
+     *
+     * <p>不属于本池的 FBO 抛异常——静默忽略会导致 FBO 永久泄漏。
+     * null 或已释放的 FBO 静默忽略（幂等归还）。
      */
     @Override
     public void release(GLFramebuffer framebuffer) {
         if (framebuffer == null) return;
         if (framebuffer.isReleased()) return;
-        if (closed) {
-            throw new IllegalStateException("pool is closed");
-        }
 
         synchronized (lock) {
-            for (TextureSlot slot : slots) {
+            for (int i = 0; i < slots.size(); i++) {
+                TextureSlot slot = slots.get(i);
                 if (slot.owns(framebuffer)) {
                     slot.release(framebuffer);
                     activeCount--;
+
+                    // 全部空闲——移除 slot，归还纹理
+                    if (slot.isFullyIdle()) {
+                        slots.remove(i);
+                        texturePool.release(slot.texture());
+                    }
                     return;
                 }
             }
@@ -141,45 +130,34 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
     // ═══════════════════════════════════════════════
 
     /**
-     * 关闭池。释放所有 FBO，归还全部纹理，关闭 texturePool。
+     * 关闭底层纹理池。释放 texturePool 中缓存的空闲纹理。
      *
-     * <p><b>不可重入</b>：重复调用抛异常。
+     * <p><b>转发语义</b>：本池没有自有生命周期。已借出的 FBO 不受
+     * 影响——它们在归还时归还纹理给 texturePool，如果 texturePool
+     * 已关闭，纹理池会直接释放它。
      *
-     * <p><b>前置条件</b>：所有 FBO 都已归还。有借出时抛异常。
-     *
-     * <p>锁外调用 GL 释放动作——缩短临界区。
-     *
-     * @throws IllegalStateException 池已关闭，或仍有 FBO 借出
+     * <p><b>幂等</b>：由 texturePool.close 的内部语义决定。
      */
     @Override
     public void close() {
-        List<TextureSlot> toClose;
-        synchronized (lock) {
-            if (closed) {
-                throw new IllegalStateException("pool is already closed");
-            }
-            if (activeCount > 0) {
-                throw new IllegalStateException(
-                        "cannot close: " + activeCount
-                                + " framebuffer(s) still in use");
-            }
-            closed = true;
-            toClose = new ArrayList<>(slots);
-            slots.clear();
-        }
-
-        for (TextureSlot slot : toClose) {
-            slot.releaseAll();
-            texturePool.release(slot.texture());
-        }
         texturePool.close();
+    }
+
+    /**
+     * 池是否已关闭。转发自底层 {@link FixedSizeTexturePool}。
+     *
+     * <p>本池没有独立于 texturePool 的生命周期。查询关闭状态等于
+     * 查询 texturePool 的关闭状态。
+     */
+    public boolean isClosed() {
+        return texturePool.isClosed();
     }
 
     // ═══════════════════════════════════════════════
     // 状态
     // ═══════════════════════════════════════════════
 
-    /** 已创建的 slot 数。对应"用户同时持有过的最大 FBO 数"。 */
+    /** 已创建的 slot 数。 */
     public int getSlotCount() {
         synchronized (lock) {
             return slots.size();
@@ -203,8 +181,6 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
             return activeCount;
         }
     }
-
-    public boolean isClosed() { return closed; }
 
     // ═══════════════════════════════════════════════
     // 内部类：一张纹理 + 它的全部 FBO
@@ -241,10 +217,9 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
             idle.addFirst(fbo);
         }
 
-        void releaseAll() {
-            for (GLFramebuffer fbo : fbos) {
-                fbo.release();
-            }
+        /** 全部 FBO 都空闲。 */
+        boolean isFullyIdle() {
+            return idle.size() == fbos.size();
         }
 
         boolean owns(GLFramebuffer fbo) {
