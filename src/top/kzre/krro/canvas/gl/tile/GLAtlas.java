@@ -17,28 +17,23 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * GL 图集：管理一张 {@link GLTexture} 中所有瓦片槽位的分配与释放。
  *
- * <p>一个 atlas 对应一张 {@code GL_TEXTURE_2D_ARRAY}：
- * <ul>
- *   <li>每层是一个 {@code layerSize × layerSize} 的方形区域</li>
- *   <li>层内按 {@code gridSize × gridSize} 网格摆放瓦片</li>
- *   <li>{@code gridSize = layerSize / tileSize}（如 256/64 = 4）</li>
- *   <li>总槽位 {@code capacity = layers × gridSize²}</li>
- * </ul>
+ * <p>布局由 {@link GLTiledTextureLayout} 描述。构造时校验纹理维度
+ * 与布局一致。
  *
  * <h2>索引</h2>
  * 全局瓦片索引 {@code index ∈ [0, capacity)}，编码为：
  * <pre>
  *   layer = index / tilesPerLayer
  *   local = index % tilesPerLayer
- *   sx    = local % gridSize
- *   sy    = local / gridSize
+ *   sx    = local % tilesPerEdge
+ *   sy    = local / tilesPerEdge
  * </pre>
  * {@code allocated} 位图与 {@code tiles[]} 映射都以全局索引为下标。
  *
  * <h2>线程契约</h2>
  * <ul>
  *   <li>{@code allocate} / {@code move} / {@code release} /
- *       {@code ensureUploaded} / {@code ensureDownloaded} —— GL 线程</li>
+ *       {@code ensureUploaded} —— GL 线程</li>
  *   <li>{@code freeTile} 可能从任意线程进入（{@link GLTileData#release()}
  *       由引用计数触发）—— 内部用 {@code lock} 保护</li>
  *   <li>{@link GLTileData#markDirty()} —— 任意线程</li>
@@ -46,90 +41,74 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class GLAtlas {
 
-
     /** 私有锁，避免外部用 {@code synchronized (atlas)} 干扰。 */
     private final Object lock = new Object();
 
     private final GLTexture texture;
-    private final int capacity;          // = layers × tilesPerLayer
-    private final int tileSize;
-    private final int gridSize;          // 每层网格边长
-    private final int tilesPerLayer;     // = gridSize²
-    private final BitSet allocated;      // 全局瓦片索引
+    private final GLTiledTextureLayout layout;
+
+    private final BitSet allocated;
+    private final GLTileData[] tiles;
+    private final int capacity;
 
     private boolean released;
-    private final GLTileData[] tiles;    // 全局瓦片索引 → tile
-    private  int unit = -1;
 
     // ═══════════════════════════════════════════════
     // 构造
     // ═══════════════════════════════════════════════
 
     /**
-     * @param texture  底层纹理（{@code GL_TEXTURE_2D_ARRAY}）
-     * @param tileSize 瓦片边长（像素）
-     * @throws IllegalArgumentException 纹理尺寸与 tileSize 不匹配
+     * @param texture 底层纹理（{@code GL_TEXTURE_2D_ARRAY}）
+     * @param layout  瓦片布局
+     * @throws IllegalArgumentException 纹理维度与布局不一致
      */
-    public GLAtlas(GLTexture texture, int tileSize) {
+    public GLAtlas(GLTexture texture, GLTiledTextureLayout layout) {
         if (texture == null) {
             throw new IllegalArgumentException("texture must not be null");
         }
-        if (tileSize < 1) {
-            throw new IllegalArgumentException("tileSize must be >= 1: " + tileSize);
+        if (layout == null) {
+            throw new IllegalArgumentException("layout must not be null");
         }
-        if (texture.getWidth() != texture.getHeight()) {
+        if (texture.getWidth() != layout.getLayerSize()
+                || texture.getHeight() != layout.getLayerSize()) {
             throw new IllegalArgumentException(
-                    "Texture must be square: " + texture.getWidth() + "x" + texture.getHeight());
+                    "texture dimensions " + texture.getWidth() + "x" + texture.getHeight()
+                            + " do not match layout layer size " + layout.getLayerSize());
         }
-        if (texture.getWidth() % tileSize != 0) {
+        if (texture.getLayers() != layout.getLayers()) {
             throw new IllegalArgumentException(
-                    "Texture size " + texture.getWidth()
-                            + " must be a multiple of tile size " + tileSize);
+                    "texture layers " + texture.getLayers()
+                            + " do not match layout layers " + layout.getLayers());
         }
 
-        this.texture       = texture;
-        this.tileSize      = tileSize;
-        this.gridSize      = texture.getWidth() / tileSize;
-        this.tilesPerLayer = gridSize * gridSize;
-        this.capacity      = texture.getLayers() * tilesPerLayer;
-        this.tiles         = new GLTileData[capacity];
-        this.allocated     = new BitSet(capacity);
-        this.released      = false;
+        this.texture   = texture;
+        this.layout    = layout;
+        this.capacity = layout.getCapacity();
+        this.tiles     = new GLTileData[capacity];
+        this.allocated = new BitSet(capacity);
+        this.released  = false;
     }
 
 
+    public GLTiledTextureLayout getLayout() { return layout; }
+
+
+
     /**
-     * 绑定 atlas 到指定纹理单元。
+     * 绑定底层纹理到指定纹理单元。
      *
-     * <p>设置纹理单元并绑定底层纹理——之后 shader 里对应的
-     * {@code sampler2DArray} 可以从该 unit 采样。后续
-     * {@link GLTileData#getDescriptor()} 返回的 descriptor 里的 unit
-     * 与此一致。
-     *
-     * <p><b>有 GL 副作用</b>——不是纯属性设置。必须在 GL 线程上调用。
+     * <p><b>有 GL 副作用</b>——必须在 GL 线程上调用。
+     * unit 由调用方（规划阶段的结果）决定，atlas 不持有 unit 状态。
      *
      * @param unit 纹理单元索引，必须 ≥ 0
      * @throws IllegalArgumentException unit &lt; 0
      */
     public void bind(int unit) {
         if (unit < 0) {
-            throw new IllegalArgumentException(
-                    "unit must be >= 0, got " + unit);
+            throw new IllegalArgumentException("unit must be >= 0, got " + unit);
         }
-        this.unit = unit;
         this.texture.bind(unit);
     }
-
-    // ═══════════════════════════════════════════════
-    // 访问器
-    // ═══════════════════════════════════════════════
-
-
-    public int getTileSize()      { return tileSize; }
-    public int getGridSize()      { return gridSize; }
-    public int getTilesPerLayer() { return tilesPerLayer; }
-    public int getCapacity()      { return capacity; }
-    public int getUnit()          { return unit; }
 
     public boolean isFull() {
         synchronized (lock) {
@@ -190,18 +169,56 @@ public final class GLAtlas {
                             + peer.getClass().getName() + ")");
         }
 
-        int rc = peer.refCount();
-        if (rc != 1) {
-            throw new IllegalStateException(
-                    "peer must be exclusively owned (refCount == 1) for transfer, "
-                            + "but refCount = " + rc);
-        }
+
 
         Handle handle = allocateHandle();
         GLTileData tile = new GLTileData(peer, handle);
         registerTile(handle.getIndex(), tile);
         return tile;
     }
+
+    // ═══════════════════════════════════════════════
+    // 精确分配
+    // ═══════════════════════════════════════════════
+
+    /**
+     * 在指定槽位分配瓦片，<b>独占转移</b> peer 的所有权。
+     *
+     * <p>与 {@link #allocate(TileData)} 的区别：
+     * <ul>
+     *   <li>{@code allocate}   —— 自动找空闲槽位</li>
+     *   <li>{@code allocateAt} —— 精确指定位置，位置已被占用则抛异常</li>
+     * </ul>
+     *
+     * <p><b>前置条件</b>：peer 是 CPU 侧独占的 {@link TileData}
+     * （{@code refCount == 1}），不能是已包装的 {@link GLTileData}。
+     * 精确分配没有"幂等返回已有"的语义——位置对不上就是错误。
+     *
+     * <p><b>线程契约</b>：必须在 GL 线程上调用。
+     *
+     * @param layer texture array 层索引，{@code [0, layout.getLayers())}
+     * @param sx    层内列坐标（u 方向），{@code [0, tilesPerEdge)}
+     * @param sy    层内行坐标（v 方向），{@code [0, tilesPerEdge)}
+     * @param peer  瓦片数据，独占
+     * @throws IndexOutOfBoundsException layer / sx / sy 越界
+     * @throws IllegalStateException     peer 非独占、已是 GPU 瓦片、或槽位已占用
+     */
+    public GLTileData allocateAt(int layer, int sx, int sy, TileData peer) {
+        if (peer instanceof GLTile) {
+            throw new IllegalStateException(
+                    "peer is already GPU-backed (class = "
+                            + peer.getClass().getName()
+                            + "); allocateAt requires a fresh CPU peer");
+        }
+
+
+        int index = encodeIndex(layer, sx, sy);
+        Handle handle = allocateHandleAt(index);
+        GLTileData tile = new GLTileData(peer, handle);
+        registerTile(index, tile);
+        return tile;
+    }
+
 
     /** 分配一个槽位，返回 Handle。不含 peer 绑定逻辑。 */
     private Handle allocateHandle() {
@@ -213,12 +230,61 @@ public final class GLAtlas {
             }
             allocated.set(index);
         }
+        return decodeHandle(index);
+    }
+
+    // ═══════════════════════════════════════════════
+    // 索引编解码
+    // ═══════════════════════════════════════════════
+
+    /** 把 (layer, sx, sy) 编码为全局索引。越界抛异常。 */
+    private int encodeIndex(int layer, int sx, int sy) {
+        int layers        = layout.getLayers();
+        int tilesPerEdge  = layout.getTilesPerEdge();
+        int tilesPerLayer = layout.getTilesPerLayer();
+
+        if (layer < 0 || layer >= layers) {
+            throw new IndexOutOfBoundsException(
+                    "layer " + layer + " out of [0, " + layers + ")");
+        }
+        if (sx < 0 || sx >= tilesPerEdge) {
+            throw new IndexOutOfBoundsException(
+                    "sx " + sx + " out of [0, " + tilesPerEdge + ")");
+        }
+        if (sy < 0 || sy >= tilesPerEdge) {
+            throw new IndexOutOfBoundsException(
+                    "sy " + sy + " out of [0, " + tilesPerEdge + ")");
+        }
+        return layer * tilesPerLayer + sy * tilesPerEdge + sx;
+    }
+
+    /** 把全局索引解码为 Handle。 */
+    private Handle decodeHandle(int index) {
+        int tilesPerLayer = layout.getTilesPerLayer();
+        int tilesPerEdge  = layout.getTilesPerEdge();
         int layer = index / tilesPerLayer;
         int local = index % tilesPerLayer;
-        int sx    = local % gridSize;
-        int sy    = local / gridSize;
+        int sx    = local % tilesPerEdge;
+        int sy    = local / tilesPerEdge;
         return new Handle(index, layer, sx, sy);
     }
+
+    /** 在指定索引分配 Handle。已占用则抛异常。 */
+    private Handle allocateHandleAt(int index) {
+        if (index < 0 || index >= capacity) {
+            throw new IndexOutOfBoundsException(
+                    "index " + index + " out of [0, " + capacity + ")");
+        }
+        synchronized (lock) {
+            if (allocated.get(index)) {
+                throw new IllegalStateException(
+                        "slot already occupied at index " + index);
+            }
+            allocated.set(index);
+        }
+        return decodeHandle(index);
+    }
+
 
     /** 包级私有——供 move 在目标 atlas 上注册。 */
     void registerTile(int index, GLTileData tile) {
@@ -320,11 +386,47 @@ public final class GLAtlas {
 
     @Override
     public String toString() {
-        return "GLAtlas{unit=" + unit
-                + ", capacity=" + capacity
+        return "GLAtlas{layout=" + layout
                 + ", allocated=" + allocated.cardinality()
                 + "}";
     }
+
+    public int getCapacity() {
+        return capacity;
+    }
+
+    /**
+     * 查询指定槽位当前的瓦片。
+     *
+     * <p>返回该位置已分配的 {@link GLTileData}；空槽位返回 {@code null}。
+     * 用于规划阶段探查 atlas 现状，决定是命中缓存、换页还是新分配。
+     *
+     * <p><b>线程契约</b>：任意线程可读。内部用 {@code lock} 保护。
+     *
+     * @param layer 层索引
+     * @param sx    层内列
+     * @param sy    层内行
+     * @return 该槽位的 GLTileData；空槽位返回 null
+     * @throws IndexOutOfBoundsException layer / sx / sy 越界
+     */
+    public GLTileData getTileAt(int layer, int sx, int sy) {
+        int index = encodeIndex(layer, sx, sy);
+        synchronized (lock) {
+            return tiles[index];
+        }
+    }
+
+    /**
+     * 查询指定槽位是否已占用。
+     */
+    public boolean isOccupiedAt(int layer, int sx, int sy) {
+        int index = encodeIndex(layer, sx, sy);
+        synchronized (lock) {
+            return allocated.get(index);
+        }
+    }
+
+
 
     // ═══════════════════════════════════════════════
     // Handle
@@ -334,9 +436,9 @@ public final class GLAtlas {
      * 瓦片槽位句柄。携带解码后的 {@code (layer, sx, sy)}。
      */
     private final class Handle {
-        private final int index;      // 全局瓦片索引
+        private final int index;
         private final int layer;
-        private final int sx, sy;     // 层内格坐标
+        private final int sx, sy;
         private boolean valid = true;
 
         Handle(int index, int layer, int sx, int sy) {
@@ -346,13 +448,10 @@ public final class GLAtlas {
             this.sy    = sy;
         }
 
-        int getIndex()    { return index; }
-        int getLayer()    { return layer; }
-        int getSx()       { return sx; }
-        int getSy()       { return sy; }
-        int getTileSize() { return tileSize; }
-        int getGridSize() { return gridSize; }
-        int getUnit()     { return unit; }
+        int getIndex() { return index; }
+        int getLayer() { return layer; }
+        int getSx()    { return sx; }
+        int getSy()    { return sy; }
 
         GLAtlas getGLAtlas() { return GLAtlas.this; }
         PixelFormat getPixelFormat() { return texture.getPixelFormat(); }
@@ -365,17 +464,17 @@ public final class GLAtlas {
 
         /** 上传本瓦片到层内的子矩形。 */
         void upload(ByteBuffer buffer) {
+            int ts = layout.getTileSize();
             texture.uploadRegion(
                     layer,
-                    sx * tileSize,
-                    sy * tileSize,
-                    tileSize,
-                    tileSize,
+                    sx * ts,
+                    sy * ts,
+                    ts,
+                    ts,
                     buffer);
         }
-
-
     }
+
 
     // ═══════════════════════════════════════════════
     // GLTileData
@@ -392,37 +491,57 @@ public final class GLAtlas {
      *   <li>其他 {@link TileData} 代理方法 —— 由 peer 契约决定</li>
      * </ul>
      *
-     * <p>内部字段 {@code handle} / {@code descriptor} 不做同步——访问
-     * 完全落在 GL 线程内，由上述契约保证。
+     * <p>内部字段 {@code handle} 不做同步——访问完全落在 GL 线程内，
+     * 由上述契约保证。
      */
     public static final class GLTileData implements TileData, GLTile, UploadableTile {
         private final TileData peer;
-        /** 跨线程访问：CPU 线程 markDirty，GL 线程 ensureUploaded 清。 */
+        /** 跨线程访问 */
         private final AtomicBoolean dirty = new AtomicBoolean(true);
         private GLAtlas.Handle handle;
 
         private GLTileData(TileData peer, GLAtlas.Handle handle) {
-
             this.peer   = peer;
             this.handle = handle;
         }
 
+        /**
+         * 把 {@link Tile} 上的 GPU 形态换回 CPU 形态。
+         *
+         * <p>如果 tile 当前持有 {@link GLTileData}：
+         * <ol>
+         *   <li>{@code tile.replaceData(peer)} —— 引用计数不变，
+         *       Tile 的持有从 GLTileData 换成 peer</li>
+         *   <li>{@code handle.free()} —— 显式释放 atlas 槽位</li>
+         * </ol>
+         *
+         * <p>如果 tile 为空，或不持有 GLTileData，静默返回。
+         *
+         * <p><b>线程契约</b>：涉及 atlas 槽位释放，必须在 GL 线程上调用。
+         * 调用方需保证 tile 的 dataRef 在本方法执行期间不被并发修改。
+         *
+         * @param tile 目标瓦片，可为 null
+         */
+        public static void pageOut(Tile tile) {
+            if (tile == null) return;
+            GLTileData gl = tile.queryData(GLTileData.class);
+            if (gl == null) return;
+            tile.replaceData(gl.peer);
+            gl.handle.free();
+        }
 
         @Override
         public GLTileDescriptor getDescriptor() {
             GLAtlas atlas = handle.getGLAtlas();
-            int unit = atlas.getUnit();
-            if (unit < 0) {
-                throw new IllegalStateException(
-                        "atlas unit not assigned; call GLAtlas.setUnit(n) before "
-                                + "collecting descriptors. atlas=" + atlas);
-            }
+
+
+            GLTiledTextureLayout layout = atlas.getLayout();
+            int edge = layout.getTilesPerEdge();
             return GLTileDescriptor.of(
-                    unit,
                     handle.getLayer(),
-                    handle.getTileSize(),
-                    (float) handle.getSx() / handle.getGridSize(),
-                    (float) handle.getSy() / handle.getGridSize());
+                    layout.getTileSize(),
+                    (float) handle.getSx() / edge,
+                    (float) handle.getSy() / edge);
         }
 
         /**
@@ -433,11 +552,11 @@ public final class GLAtlas {
             this.dirty.set(true);
         }
 
+
         @Override
         public void markDirty() {
             this.dirty.set(true);
         }
-
 
         @Override
         public void ensureUploaded() {
@@ -469,8 +588,9 @@ public final class GLAtlas {
         // ── 上传 ─────────────────────────────────────
 
         private void upload() {
-            int tileSize = handle.getTileSize();
-            int pixelCount = tileSize * tileSize;
+            GLAtlas atlas = handle.getGLAtlas();
+            int ts = atlas.getLayout().getTileSize();
+            int pixelCount = ts * ts;
             PixelFormat fmt = handle.getPixelFormat();
 
             FloatBuffer src = peer.floatBuffer();
@@ -493,7 +613,5 @@ public final class GLAtlas {
                 MemoryUtil.memFree(tmp);
             }
         }
-
     }
-
 }

@@ -12,6 +12,7 @@ import top.kzre.krro.util.tile.TiledCanvas;
 
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -19,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>内部创建并持有一个 {@link TiledCanvas}，构造时把所有瓦片区域
  * {@code (layer, sx, sy)} 注册为 canvas 的 tile。每个 tile 的
- * {@link TileData} 是一个只读的 {@link GLTextureTileData} 视图。
+ * {@link TileData} 是一个只读的 {@link GLTextureTileDataImpl} 视图。
  *
  * <h2>生命周期</h2>
  * <p><b>没有显式 close</b>——生命周期完全绑定到 canvas 视图计数：
@@ -34,12 +35,19 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <h2>像素访问</h2>
  * <p>canvas <b>不设只读标志</b>——但逐像素路径在到达
- * {@link GLTextureTileData#getPixels} / {@link GLTextureTileData#floatBuffer}
+ * {@link GLTextureTileDataImpl#getPixels} / {@link GLTextureTileDataImpl#floatBuffer}
  * 时抛 {@link UnsupportedOperationException}——GPU 视图没有 CPU 侧数据。
  * 瓦片级操作（{@code clear} / {@code deleteTile}）不涉及像素访问，安全。
  *
- * <h2>线程契约</h2>
- * 释放动作由 {@code onRelease} 投递到 GL 线程——可在任意线程触发。
+ * <p><b>线程契约</b>：
+ * <ul>
+ *   <li>调用 {@code downloadTo} 可以在<b>任意线程</b>上。</li>
+ *   <li>内部把 GL 操作投递到渲染后端线程执行。</li>
+ *   <li>返回的 future 在 GL 操作完成后完成；此时 {@code target}
+ *       的对应格已写入。调用方通过 future 的完成信号获取可见性保证。</li>
+ *   <li>参数校验（尺寸、通道数）在调用线程同步完成，不合规时同步抛
+ *       {@link IllegalArgumentException}。</li>
+ * </ul>
  */
 public final class GLTiledTexture {
 
@@ -86,6 +94,7 @@ public final class GLTiledTexture {
         int tilesPerEdge = texture.getWidth() / tileSize;
         int layers   = texture.getLayers();
 
+        // TODO 泛化构造
         TiledCanvas c = new TiledCanvas(tileSize);
         for (int layer = 0; layer < layers; layer++) {
             for (int sy = 0; sy < tilesPerEdge; sy++) {
@@ -93,7 +102,7 @@ public final class GLTiledTexture {
                     int tx = sx;
                     int ty = layer * tilesPerEdge + sy;
                     activeTiles.incrementAndGet();
-                    GLTextureTileData view = new GLTextureTileData(this, layer, sx, sy);
+                    GLTextureTileDataImpl view = new GLTextureTileDataImpl(this, layer, sx, sy);
                     c.replaceTile(tx, ty, view);
                 }
             }
@@ -179,19 +188,29 @@ public final class GLTiledTexture {
     // 视图类型
     // ═══════════════════════════════════════════════
 
-    public static final class GLTextureTileData extends AbstractTileData
-            implements GLTile, DownloadableTile {
+    public interface GLTextureTileData {
+        GLTiledTexture getOwner();
+    }
+
+    public static final class GLTextureTileDataImpl extends AbstractTileData
+            implements GLTile, GLTextureTileData, DownloadableTile {
 
         private final GLTiledTexture owner;
         private final int layer;
         private final int sx, sy;
 
-        GLTextureTileData(GLTiledTexture owner, int layer, int sx, int sy) {
+        GLTextureTileDataImpl(GLTiledTexture owner, int layer, int sx, int sy) {
             this.owner = owner;
             this.layer = layer;
             this.sx    = sx;
             this.sy    = sy;
         }
+
+        /**
+         * 内部类，用来查询纹理
+         */@Override
+       public GLTiledTexture getOwner() { return owner; }
+
 
         // ── GLTile ────────────────────────────────────
 
@@ -204,14 +223,15 @@ public final class GLTiledTexture {
             }
             int grid = owner.gridSize();
             return GLTileDescriptor.of(
-                    unit, layer, owner.tileSize(),
+                    layer, owner.tileSize(),
                     (float) sx / grid, (float) sy / grid);
         }
 
         // ── GLDownloadableTile ────────────────────────
 
         @Override
-        public void downloadTo(TiledCanvas target, int tx, int ty) {
+        public CompletableFuture<Void> downloadTo(TiledCanvas target, int tx, int ty) {
+            // 参数校验在调用线程做，同步抛出，便于尽早暴露契约违反
             int ts = owner.tileSize();
             int targetTs = target.getTileSize();
             if (ts != targetTs) {
@@ -219,9 +239,7 @@ public final class GLTiledTexture {
                         "tile size mismatch: source=" + ts + ", target=" + targetTs);
             }
 
-            int pixelCount = ts * ts;
             PixelFormat fmt = owner.texture().getPixelFormat();
-
             int channels = PixelCodec.channels(fmt);
             int targetChannels = target.getChannels();
             if (channels != targetChannels) {
@@ -231,22 +249,32 @@ public final class GLTiledTexture {
                                 + ", fmt=" + fmt);
             }
 
-            ByteBuffer packed = owner.texture().downloadRegion(
-                    layer, sx * ts, sy * ts, ts, ts);
-            try {
-                int needFloats = PixelCodec.cpuFloats(fmt, pixelCount);
-                ByteBuffer out = MemoryUtil.memAlloc(needFloats * Float.BYTES);
+            int pixelCount = ts * ts;
+
+            // GL 操作投递到 GL 线程，返回的 future 在 GL 线程完成后完成
+            return owner.glExecutor.submit(() -> {
+                ByteBuffer packed = null;
+                ByteBuffer out = null;
                 try {
+                    packed = owner.texture().downloadRegion(
+                            layer, sx * ts, sy * ts, ts, ts);
+
+                    int needFloats = PixelCodec.cpuFloats(fmt, pixelCount);
+                    out = MemoryUtil.memAlloc(needFloats * Float.BYTES);
                     FloatBuffer dst = out.asFloatBuffer();
                     PixelCodec.unpack(fmt, packed, pixelCount, dst);
                     dst.flip();
+
+                    // 所有权转移给 target —— 此后不能再释放 out
                     target.replaceTile(tx, ty, out);
+                    out = null;
+
+                    return null;
                 } finally {
-                    MemoryUtil.memFree(out);
+                    if (packed != null) MemoryUtil.memFree(packed);
+                    if (out != null) MemoryUtil.memFree(out);
                 }
-            } finally {
-                MemoryUtil.memFree(packed);
-            }
+            });
         }
 
         // ── AbstractTileData ──────────────────────────

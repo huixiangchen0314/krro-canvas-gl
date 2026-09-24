@@ -8,7 +8,6 @@ package top.kzre.krro.canvas.gl.tile;
  *
  * <p><b>字段语义</b>：
  * <ul>
- *   <li>{@link #getUnit()}     纹理单元——多 atlas 场景下区分 atlas</li>
  *   <li>{@link #getLayer()}    texture array 层索引</li>
  *   <li>{@link #getTileSize()} tile 边长（像素）</li>
  *   <li>{@link #getU0()} / {@link #getV0()}  层内 uv 起点</li>
@@ -23,9 +22,6 @@ public final class GLTileDescriptor {
     // ═══════════════════════════════════════════════
     // 字段
     // ═══════════════════════════════════════════════
-
-    /** 纹理单元。多 atlas 场景下区分 atlas。 */
-    private final int unit;
 
     /** texture array 中的层索引。 */
     private final int layer;
@@ -43,9 +39,9 @@ public final class GLTileDescriptor {
     // 构造
     // ═══════════════════════════════════════════════
 
-    private GLTileDescriptor(int unit, int layer, int tileSize,
+    private GLTileDescriptor(int layer, int tileSize,
                              float u0, float v0) {
-        this.unit     = unit;
+
         this.layer    = layer;
         this.tileSize = tileSize;
         this.u0       = u0;
@@ -59,23 +55,22 @@ public final class GLTileDescriptor {
     /**
      * 标准构造：一层一块 tile，uv 起点为 (0, 0)。
      */
-    public static GLTileDescriptor of(int unit, int layer, int tileSize) {
-        return new GLTileDescriptor(unit, layer, tileSize, 0f, 0f);
+    public static GLTileDescriptor of(int layer, int tileSize) {
+        return new GLTileDescriptor(layer, tileSize, 0f, 0f);
     }
 
     /**
      * 完整构造：指定层内 uv 起点（用于一层多块 tile 的子区域）。
      */
-    public static GLTileDescriptor of(int unit, int layer, int tileSize,
+    public static GLTileDescriptor of(int layer, int tileSize,
                                       float u0, float v0) {
-        return new GLTileDescriptor(unit, layer, tileSize, u0, v0);
+        return new GLTileDescriptor(layer, tileSize, u0, v0);
     }
 
     // ═══════════════════════════════════════════════
     // 访问器
     // ═══════════════════════════════════════════════
 
-    public int   getUnit()     { return unit; }
     public int   getLayer()    { return layer; }
     public int   getTileSize() { return tileSize; }
     public float getU0()       { return u0; }
@@ -88,7 +83,6 @@ public final class GLTileDescriptor {
     @Override
     public String toString() {
         return "GLTileDescriptor{"
-                + "unit=" + unit
                 + ", layer=" + layer
                 + ", tileSize=" + tileSize
                 + ", uv0=[" + u0 + "," + v0 + "]"

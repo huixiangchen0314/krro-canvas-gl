@@ -11,11 +11,10 @@ public final class GLRgba8AtlasFactory implements GLAtlasFactory {
 
     @Override
     public GLAtlas create() {
-        int tileSize = layout.getTileSize();
         int layers = layout.getLayers();
         int layerSize = layout.getLayerSize();
         return new GLAtlas(
-                GLTexture.createRgba8(layerSize, layerSize, layers), tileSize);
+                GLTexture.createRgba8(layerSize, layerSize, layers), layout);
     }
 
 }
