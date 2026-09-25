@@ -1,6 +1,7 @@
 package top.kzre.krro.canvas.gl.composite;
 
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
+import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -34,7 +35,7 @@ import java.util.List;
  */
 public final class CompositeRequest {
 
-    private final AtlasPoolPage           page;
+    private final AtlasPoolPage page;
     private final ViewportGrid            viewportGrid;
     private final List<TileBufferBundle>  bundles;
     private final GLFramebuffer           fboA;

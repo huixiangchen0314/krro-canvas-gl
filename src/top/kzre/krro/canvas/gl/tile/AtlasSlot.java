@@ -1,4 +1,4 @@
-package top.kzre.krro.canvas.gl.composite;
+package top.kzre.krro.canvas.gl.tile;
 
 /**
  * atlas 上的一个槽位。不可变值对象。

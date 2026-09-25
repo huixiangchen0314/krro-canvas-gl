@@ -164,7 +164,22 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
         }
     }
 
-    /** 空闲 FBO 总数。 */
+    /**
+     * 当前可立即复用的空闲 FBO 数。
+     *
+     * <p><b>用途</b>：外部在调度 GL 线程前预判——空闲数足够时
+     * {@link #acquire()} 从已有 slot 取，无 GL 调用；空闲数不足时
+     * acquire 会借新纹理并 wrap 出 FBO，需要 GL 调度。
+     *
+     * <p><b>只统计已 wrap 的 FBO</b>：texturePool 里的空闲纹理虽然
+     * 已在显存，但 wrap 成 FBO 需要 {@code glFramebufferTextureLayer}
+     * 调用——不是立即可用的。所以不计入本数。
+     *
+     * <p><b>不是池持有的资源</b>：空闲 FBO 是 slot 内部的视图——
+     * 反映的是"曾经借出、已归还、等待复用"的 FBO。
+     *
+     * <p><b>快照语义</b>：并发场景下数值会变化。
+     */
     public int getIdleCount() {
         synchronized (lock) {
             int n = 0;

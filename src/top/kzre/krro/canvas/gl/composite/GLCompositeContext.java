@@ -1,11 +1,9 @@
 package top.kzre.krro.canvas.gl.composite;
 
-import top.kzre.krro.canvas.gl.resource.FixedSizeFrameBufferPool;
-import top.kzre.krro.canvas.gl.resource.FixedSizeTexturePool;
-import top.kzre.krro.canvas.gl.resource.NoGLTexturePool;
-import top.kzre.krro.canvas.gl.resource.PixelFormat;
+import top.kzre.krro.canvas.gl.resource.*;
 import top.kzre.krro.canvas.gl.tile.GLAtlasPool;
 import top.kzre.krro.core.util.SerialExecutor;
+import top.kzre.krro.util.tile.TiledCanvas;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -55,28 +53,14 @@ public class GLCompositeContext implements AutoCloseable {
     /** 借用，不持有所有权。 */
     private final SerialExecutor glExecutor;
 
-    // ═══════════════════════════════════════════════
-    // 拥有资源
-    // ═══════════════════════════════════════════════
-
-    /** 拥有。构造时接管所有权，关闭时释放。 */
     private final GLAtlasPool atlasPool;
-
-    /** 拥有。视口尺寸变化时重建，关闭时释放。 */
+    private final TiledCanvas emptyCanvas;
     private volatile FixedSizeFrameBufferPool viewFrameBufferPool;
 
-    // ═══════════════════════════════════════════════
-    // 配置
-    // ═══════════════════════════════════════════════
-
     private final int             tileSize;
-    private final int             fboLayers;
-    private final PixelFormat     fboFormat;
-    private final NoGLTexturePool textureDelegate;
-
-    // ═══════════════════════════════════════════════
-    // 状态
-    // ═══════════════════════════════════════════════
+    private final int viewFboPoolCapacity;
+    private final PixelFormat pixelFormat;
+    private final NoGLTexturePool noTexPool;
 
     /** 关闭标记。CAS 保证重复调用被拒绝。 */
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -88,18 +72,12 @@ public class GLCompositeContext implements AutoCloseable {
     // 构造
     // ═══════════════════════════════════════════════
 
-    /**
-     * @param glExecutor GL 线程执行器，借用
-     * @param atlasPool  atlas 池，<b>所有权转移给本类</b>
-     * @param tileSize   瓦片边长，必须 &gt; 0
-     * @param fboLayers  FBO 池层数（ping-pong 通常为 2），必须 &gt; 0
-     * @param fboFormat  FBO 颜色格式
-     */
+
     public GLCompositeContext(SerialExecutor glExecutor,
                               GLAtlasPool atlasPool,
                               int tileSize,
-                              int fboLayers,
-                              PixelFormat fboFormat) {
+                              int viewFboPoolCapacity,
+                              PixelFormat pixelFormat) {
         if (glExecutor == null) {
             throw new IllegalArgumentException("glExecutor must not be null");
         }
@@ -109,19 +87,24 @@ public class GLCompositeContext implements AutoCloseable {
         if (tileSize <= 0) {
             throw new IllegalArgumentException("tileSize must be > 0: " + tileSize);
         }
-        if (fboLayers <= 0) {
-            throw new IllegalArgumentException("fboLayers must be > 0: " + fboLayers);
+        if (viewFboPoolCapacity <= 0) {
+            throw new IllegalArgumentException("viewFboPoolCapacity must be > 0: " + viewFboPoolCapacity);
         }
-        if (fboFormat == null) {
-            throw new IllegalArgumentException("fboFormat must not be null");
+        if (pixelFormat == null) {
+            throw new IllegalArgumentException("pixelFormat must not be null");
         }
 
         this.glExecutor      = glExecutor;
         this.atlasPool       = atlasPool;
         this.tileSize        = tileSize;
-        this.fboLayers       = fboLayers;
-        this.fboFormat       = fboFormat;
-        this.textureDelegate = new NoGLTexturePool(glExecutor);
+        this.viewFboPoolCapacity = viewFboPoolCapacity;
+        this.pixelFormat = pixelFormat;
+        this.noTexPool = new NoGLTexturePool(glExecutor);
+
+        int channels = PixelCodec.channels(pixelFormat);
+        float[] defaultPixels = new float[channels];
+        this.emptyCanvas = new TiledCanvas(tileSize, defaultPixels);
+        emptyCanvas.setReadonly(true);
     }
 
 
@@ -163,7 +146,7 @@ public class GLCompositeContext implements AutoCloseable {
     // GL 线程内部接口
     // ═══════════════════════════════════════════════
 
-    void adjustViewSize(int width, int height) {
+    public void adjustViewSize(int width, int height) {
         checkGlThread();
         if (closed.get()) {
             throw new IllegalStateException("context is closed");
@@ -193,9 +176,9 @@ public class GLCompositeContext implements AutoCloseable {
     private FixedSizeFrameBufferPool createFboPool(int width, int height) {
         FixedSizeTexturePool texturePool = new FixedSizeTexturePool(
                 1,
-                width, height, fboLayers,
-                fboFormat,
-                textureDelegate);
+                width, height, viewFboPoolCapacity,
+                pixelFormat,
+                noTexPool);
         try {
             return new FixedSizeFrameBufferPool(texturePool);
         } catch (Throwable t) {
@@ -282,7 +265,13 @@ public class GLCompositeContext implements AutoCloseable {
             throw new IllegalStateException(
                     "must be called on the GL thread");
         }
+
     }
+
+    public PixelFormat getPixelFormat() { return pixelFormat; }
+
+    public TiledCanvas getEmptyCanvas() { return emptyCanvas; }
+
 
     private static int alignUp(int value, int multiple) {
         return ((value + multiple - 1) / multiple) * multiple;

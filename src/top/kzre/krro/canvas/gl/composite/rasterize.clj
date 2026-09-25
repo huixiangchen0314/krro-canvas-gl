@@ -1,13 +1,16 @@
-(ns top.kzre.krro.canvas.gl.rasterize
-  (:require [top.kzre.krro.core.util.promise :as promise]
-            [top.kzre.krro.canvas.core.layer.render.canvas-tracker :as tracker]))
+(ns top.kzre.krro.canvas.gl.composite.rasterize
+  (:require [top.kzre.krro.canvas.core.layer.util :as util]
+            [top.kzre.krro.core.util.promise :as promise]
+            [top.kzre.krro.canvas.core.layer.render.canvas-tracker :as tracker])
+  (:import (top.kzre.krro.canvas.gl.composite DefaultLayer)
+           (top.kzre.krro.util.tile TiledCanvas)))
 
 (defmulti rasterize-layer
           "把图层光栅化为瓦片容器。
 
            输入：
              layer   图层
-             opts    上下文：viewport、tile-size、gl-executor、atlas ...
+             opts    上下文：、tile-size、gl-executor、atlas ...
 
           返回：
             Promise<TiledCanvas>——该图层的局部空间瓦片，空白图层
@@ -40,7 +43,14 @@
              - 决定是否在此阶段上传 GPU（可选，非必需）"
           (fn [layer _opts] (:type layer)))
 
-
+(defn- ->layer [layer]
+  (DefaultLayer.
+    (:id layer)
+    (:canvas layer)
+    (:transform layer)
+    (:visible layer)
+    (:opacity layer)
+    (str (:blend-mode layer :normal))))
 
 (defn rasterize-layers
   "光栅化图层列表，把结果 assoc 到各图层的 :canvas。
@@ -51,28 +61,34 @@
    不负责上传——rasterize-layer 内部是否上传由它自己决定，
    本函数只保证光栅化完成。
 
-   返回 Promise<Layers>，所有图层光栅化完成后解析为新图层列表
-   （顺序与输入一致）。任一图层失败，整体以异常完成——此时已
-   光栅化出的画布由 tracker 统一释放。"
+   返回 Promise<Layers>。任一图层失败，整体以相同异常完成——
+   异常不拦截、不包装，直接向上传播。失败时已光栅化出的画布
+   由 tracker 统一释放。"
   [layers opts]
   (if (empty? layers)
     (promise/resolved layers)
     (let [tk (tracker/tracker)]
       (-> (promise/all
             (mapv (fn [layer]
-                    (-> (rasterize-layer layer opts)
+                    (-> (promise/ensure-promise (rasterize-layer layer opts))
                         (promise/fmap
                           (fn [canvas]
-                            ;; 登记所有中间产物；失败时统一释放
                             (tracker/track! tk canvas)
                             (assoc layer :canvas canvas)))))
                   layers))
           (promise/fmap
             (fn [result]
-              ;; 成功：tracker 里的画布所有权转移给 result，
-              ;; tracker 本身被 GC，不再持有引用
-              (vec result)))
-          (promise/recover-with
-            (fn [e]
-              (tracker/fail! tk)
-              (promise/rejected e)))))))
+              (mapv ->layer result)))
+          (promise/handle
+            (fn [v e]
+              (if e
+                (do
+                  (tracker/fail! tk)
+                  (throw e))
+                v)))))))
+
+
+
+(defmethod rasterize-layer :raster
+  [layer _]
+  (.copy ^TiledCanvas (:canvas layer)))

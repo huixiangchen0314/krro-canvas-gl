@@ -60,14 +60,14 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
         if (glExecutor == null) {
             throw new IllegalArgumentException("glExecutor must not be null");
         }
-        if (texture.getWidth() != texture.getHeight()) {
-            throw new IllegalArgumentException(
-                    "texture must be square: "
-                            + texture.getWidth() + "x" + texture.getHeight());
-        }
         if (texture.getWidth() % tileSize != 0) {
             throw new IllegalArgumentException(
-                    "texture size " + texture.getWidth()
+                    "texture width " + texture.getWidth()
+                            + " must be a multiple of tileSize " + tileSize);
+        }
+        if (texture.getHeight() % tileSize != 0) {
+            throw new IllegalArgumentException(
+                    "texture height " + texture.getHeight()
                             + " must be a multiple of tileSize " + tileSize);
         }
 
@@ -78,6 +78,20 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
         this.glExecutor = glExecutor;
         this.canvas     = new TiledCanvas(tileSize, defaultPixel);
     }
+    /**
+     * 每行瓦片数——X 方向。
+     */
+    int tilesPerRow() {
+        return texture.getWidth() / canvas.getTileSize();
+    }
+
+    /**
+     * 每列瓦片数——Y 方向。
+     */
+    int tilesPerColumn() {
+        return texture.getHeight() / canvas.getTileSize();
+    }
+
 
     /**
      * 注入层范围的视图。子类构造时调用。
@@ -86,14 +100,15 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
      * @param layerCount  层数
      */
     protected final void populateCanvas(int layerOffset, int layerCount) {
-        int tilesPerEdge = texture.getWidth() / canvas.getTileSize();
+        int tilesPerRow    = tilesPerRow();
+        int tilesPerColumn = tilesPerColumn();
 
         for (int i = 0; i < layerCount; i++) {
             int layer = layerOffset + i;
-            for (int sy = 0; sy < tilesPerEdge; sy++) {
-                for (int sx = 0; sx < tilesPerEdge; sx++) {
+            for (int sy = 0; sy < tilesPerColumn; sy++) {
+                for (int sx = 0; sx < tilesPerRow; sx++) {
                     int tx = sx;
-                    int ty = layer * tilesPerEdge + sy;
+                    int ty = layer * tilesPerColumn + sy;
                     activeTiles.incrementAndGet();
                     GLTextureTileDataImpl view =
                             new GLTextureTileDataImpl(this, layer, sx, sy);
@@ -139,7 +154,6 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
 
     GLTexture texture() { return texture; }
     int tileSize()      { return canvas.getTileSize(); }
-    int gridSize()      { return texture.getWidth() / canvas.getTileSize(); }
 
     /**
      * 视图引用归零时调用——递减计数。计数归零时触发
@@ -200,10 +214,12 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
                 throw new IllegalStateException(
                         "unit not assigned; call bind(n) first");
             }
-            int grid = owner.gridSize();
+            int tilesPerRow    = owner.tilesPerRow();
+            int tilesPerColumn = owner.tilesPerColumn();
             return GLTileDescriptor.of(
                     layer, owner.tileSize(),
-                    (float) sx / grid, (float) sy / grid);
+                    (float) sx / tilesPerRow,     // u0
+                    (float) sy / tilesPerColumn); // v0
         }
 
         @Override

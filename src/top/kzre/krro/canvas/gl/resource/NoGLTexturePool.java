@@ -24,6 +24,10 @@ public final class NoGLTexturePool implements GLTexturePool {
         this.threadId   = glExecutor.getTheadId();
     }
 
+    public SerialExecutor getGlExecutor() {
+        return glExecutor;
+    }
+
     @Override
     public void release(GLTexture texture) {
         if (texture == null || texture.isReleased()) return;

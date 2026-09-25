@@ -1,6 +1,5 @@
-package top.kzre.krro.canvas.gl.composite;
+package top.kzre.krro.canvas.gl.tile;
 
-import top.kzre.krro.canvas.gl.tile.GLAtlas;
 import top.kzre.krro.util.tile.TileFactory;
 import top.kzre.krro.util.tile.TiledCanvas;
 
@@ -18,6 +17,11 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
         this.atlases = atlases;
     }
 
+
+    @Override
+    public GLAtlas[] getAtlases() {
+        return atlases;
+    }
 
     @Override
     public boolean allocateAt(AtlasSlot slot, TileRef ref) {
@@ -65,7 +69,6 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
         try (TiledCanvas generator = new TiledCanvas(
                 canvas.getTileSize(),
                 canvas.getDefaultPixel(),
-                canvas.getChannels(),
                 factory)) {
             generator.replaceTile(ref.getTile());
             canvas.mergeCanvas(generator);

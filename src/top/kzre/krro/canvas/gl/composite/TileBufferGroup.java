@@ -1,5 +1,8 @@
 package top.kzre.krro.canvas.gl.composite;
 
+import top.kzre.krro.canvas.gl.tile.AtlasSlot;
+import top.kzre.krro.canvas.gl.tile.TileRef;
+
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;

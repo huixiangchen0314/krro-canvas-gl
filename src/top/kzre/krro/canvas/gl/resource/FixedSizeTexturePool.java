@@ -84,6 +84,8 @@ public final class FixedSizeTexturePool implements GLTexturePool, AutoCloseable 
         if (closed) {
             throw new IllegalStateException("pool is closed");
         }
+
+
         synchronized (lock) {
             while (!idle.isEmpty()) {
                 GLTexture t = idle.pollFirst();
@@ -92,6 +94,12 @@ public final class FixedSizeTexturePool implements GLTexturePool, AutoCloseable 
                 }
             }
         }
+
+        long theadId = delegate.getGlExecutor().getTheadId();
+        if(Thread.currentThread().getId() != theadId){
+            throw new IllegalStateException("texture acquire must be called in gl thread, when no idle rest.");
+        }
+
         return GLTexture.create(width, height, layers, pixelFormat);
     }
 

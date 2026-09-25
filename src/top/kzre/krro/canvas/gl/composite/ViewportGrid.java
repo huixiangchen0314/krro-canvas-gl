@@ -127,6 +127,10 @@ public final class ViewportGrid {
         return new ViewportGrid(viewWidth, viewHeight, tileSize, tileXY, count);
     }
 
+    public static ViewportGrid createPartial(int viewWidth, int viewHeight, int tileSize, int[] tileXY) {
+        return new ViewportGrid(viewWidth, viewHeight, tileSize, tileXY, tileXY.length / 2);
+    }
+
     // ═══════════════════════════════════════════════
     // 访问器
     // ═══════════════════════════════════════════════

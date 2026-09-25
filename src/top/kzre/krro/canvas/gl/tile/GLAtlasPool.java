@@ -1,9 +1,6 @@
 package top.kzre.krro.canvas.gl.tile;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 
 /**
  * Atlas 池：管理 {@link GLAtlas} 的生命周期。
@@ -26,7 +23,7 @@ import java.util.List;
  * <p><b>线程契约</b>：所有方法都涉及 GL 资源或状态变更，必须在
  * GL 线程上调用。池由单一线程独占，内部无同步。
  */
-public final class GLAtlasPool {
+public final class GLAtlasPool implements AutoCloseable {
 
     // ═══════════════════════════════════════════════
     // 字段
@@ -153,6 +150,57 @@ public final class GLAtlasPool {
         return getStats().getCount();
     }
 
+    /**
+     * 返回当前池中 atlas 的快照视图。
+     *
+     * <p><b>快照语义</b>：返回的对象持有调用时刻的 atlas 数组副本。
+     * 之后池的变化（acquire 新 atlas、extract 移除 atlas）不影响
+     * 已返回的 page。调用方应在规划阶段开始时取快照，并在整个
+     * 规划-执行周期内使用同一个 page。
+     */
+    public AtlasPoolPage page() {
+        return new DefaultAtlasPoolPage(atlases.toArray(new GLAtlas[0]));
+    }
+
+
+
+    /**
+     * 预热池——创建到指定数量的 atlas。
+     *
+     * <p><b>语义</b>：
+     * <ul>
+     *   <li>已有 {@code count} 个以上 atlas 时 no-op</li>
+     *   <li>创建到 {@code count} 个——不检查空闲槽位，纯粹按数量</li>
+     * </ul>
+     *
+     * <p><b>线程契约</b>：必须在 GL 线程调用。
+     *
+     * @param count 目标 atlas 数量，必须 {@code 0 <= count <= capacity}
+     * @throws IllegalArgumentException count 为负或超过 capacity
+     */
+    public void warmup(int count) {
+        if (count < 0) {
+            throw new IllegalArgumentException("count must be >= 0: " + count);
+        }
+        if (count > capacity) {
+            throw new IllegalArgumentException(
+                    "count " + count + " exceeds pool capacity " + capacity);
+        }
+        while (atlases.size() < count) {
+            atlases.add(atlasFactory.create());
+        }
+    }
+
+    /**
+     * 预热到容量上限。
+     *
+     * <p>等价于 {@code warmup(capacity)}。
+     */
+    public void warmup() {
+        warmup(capacity);
+    }
+
+
     // ═══════════════════════════════════════════════
     // 清理（转移语义）
     // ═══════════════════════════════════════════════
@@ -204,6 +252,7 @@ public final class GLAtlasPool {
      * <p>与 {@code extractAllIdle} 不同——本方法<b>不转移</b>所有权，
      * 直接释放全部纹理。
      */
+    @Override
     public void close() {
         for (GLAtlas atlas : atlases) {
             atlas.release();

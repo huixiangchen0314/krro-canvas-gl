@@ -5,7 +5,10 @@ import top.kzre.krro.canvas.core.layer.render.UploadableTile;
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.resource.GLQuad;
+import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
+import top.kzre.krro.canvas.gl.tile.AtlasSlot;
 import top.kzre.krro.canvas.gl.tile.GLTile;
+import top.kzre.krro.canvas.gl.tile.TileRef;
 
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
@@ -52,19 +55,16 @@ import static org.lwjgl.opengl.GL33.glVertexAttribDivisor;
 public final class CompositeTask implements Callable<GLFramebuffer> {
 
     private final CompositeRequest request;
-    private final GLQuad           quad;
 
-    public CompositeTask(CompositeRequest request, GLQuad quad) {
+    public CompositeTask(CompositeRequest request) {
         if (request == null) throw new IllegalArgumentException("request must not be null");
-        if (quad == null)    throw new IllegalArgumentException("quad must not be null");
-        this.request = request;
-        this.quad    = quad;
+       this.request = request;
     }
 
     @Override
     public GLFramebuffer call() throws Exception {
-        ViewportGrid           grid    = request.getViewportGrid();
-        AtlasPoolPage          page    = request.getPage();
+        ViewportGrid viewport    = request.getViewportGrid();
+        AtlasPoolPage atlasPage    = request.getPage();
         List<TileBufferBundle> bundles = request.getBundles();
 
         GLFramebuffer[] pool = { request.getFboA(), request.getFboB() };
@@ -79,23 +79,23 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
             }
             return pool[0];
         }
-
+        GLQuad quad = Globals.getQuad();
         List<TileBufferBundle> executed = new ArrayList<>();
 
         for (int i = 0; i < bundles.size(); i++) {
             TileBufferBundle bundle = bundles.get(i);
-            GLFramebuffer    target = pool[i % 2];
-            Shader           shader = bundle.getShader();
+            GLFramebuffer target = pool[i % 2];
+            Shader shader = bundle.getShader();
 
             quad.bind();
             try {
                 // 1. 准备本 bundle 的所有 group
                 List<TileBufferGroup> groups = shader.tiles();
                 for (int gi = 0; gi < groups.size(); gi++) {
-                    prepareGroup(page,
+                    prepareGroup(atlasPage,
                             groups.get(gi),
                             shader.instanceLocation(gi),
-                            grid,
+                            viewport,
                             executed);
                 }
 
@@ -116,7 +116,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
 
                     shader.bind();
                     try {
-                        quad.drawInstanced(grid.getScreenTileCount());
+                        quad.drawInstanced(viewport.getScreenTileCount());
                     } finally {
                         shader.unbind();
                     }

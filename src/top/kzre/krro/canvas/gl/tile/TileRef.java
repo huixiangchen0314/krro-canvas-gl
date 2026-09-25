@@ -1,6 +1,5 @@
-package top.kzre.krro.canvas.gl.composite;
+package top.kzre.krro.canvas.gl.tile;
 
-import top.kzre.krro.canvas.gl.tile.GLAtlas;
 import top.kzre.krro.util.tile.Tile;
 import top.kzre.krro.util.tile.TiledCanvas;
 

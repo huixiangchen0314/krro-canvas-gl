@@ -1,15 +1,13 @@
 package top.kzre.krro.canvas.gl.resource;
 
+import static org.lwjgl.opengl.GL15.*;
+import static org.lwjgl.opengl.GL20.glEnableVertexAttribArray;
+import static org.lwjgl.opengl.GL20.glVertexAttribPointer;
 import static org.lwjgl.opengl.GL30.*;
 import static org.lwjgl.opengl.GL31.glDrawArraysInstanced;
 
 /**
  * 全屏四边形：四个顶点的 {@code [0,1]²} 局部坐标，用于实例化渲染。
- *
- * <p>合成场景下，所有 tile 共用同一个 quad——每个 tile 的 descriptor
- * 作为 instance attribute 携带，draw call 用
- * {@code glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, n)} 一次画出
- * n 个 tile。
  *
  * <p>顶点数据顺序（triangle strip）：
  * <pre>
@@ -18,26 +16,21 @@ import static org.lwjgl.opengl.GL31.glDrawArraysInstanced;
  *   索引 2: (0, 1)   左上
  *   索引 3: (1, 1)   右上
  * </pre>
- * 局部坐标 {@code (0,0)} 在左下角——与 GL 纹理坐标原点一致。
  *
- * <h2>Attribute 布局</h2>
- * <ul>
- *   <li>{@code location = 0}：{@code vec2 aQuad}——顶点局部坐标</li>
- * </ul>
- * 其他 attribute（instance descriptor）由 {@link GLInstanceBuffer}
- * 绑定到更高 location。
+ * <h2>Attribute location</h2>
+ *
+ * <p><b>本类不假设任何 location</b>。VAO 创建时只有顶点数据，
+ * attribute 的配置由使用方通过 {@link #bindPositionAttribute(int)}
+ * 完成——使用方知道它的 shader 里顶点位置声明在哪个 location。
+ *
+ * <p>instance buffer 的 attribute 由使用方通过
+ * {@link GLInstanceBuffer} 绑到其他 location。多个 attribute 的
+ * location 分配是使用方的责任。
  *
  * <h2>线程契约</h2>
  * <b>所有方法必须在 GL 线程（current context）上调用。</b>
- *
- * <h2>生命周期</h2>
- * 由 {@link #create()} 创建，由 {@link #release()} 释放。不实现
- * {@link AutoCloseable}——释放必须在 GL 线程上执行。
  */
 public final class GLQuad {
-
-    /** 顶点 attribute location：局部坐标。 */
-    public static final int LOCATION_QUAD = 0;
 
     private final int vao;
     private final int vbo;
@@ -53,10 +46,10 @@ public final class GLQuad {
     // ═══════════════════════════════════════════════
 
     /**
-     * 创建全屏四边形。
+     * 创建全屏四边形。VAO + VBO 已就绪，顶点数据已上传。
      *
-     * <p>创建 VAO + VBO，上传 4 个顶点的局部坐标，配置 location 0
-     * 的 attribute pointer。失败时清理已分配对象。
+     * <p>attribute 未配置——使用方创建后调
+     * {@link #bindPositionAttribute(int)} 声明顶点位置在哪个 location。
      */
     public static GLQuad create() {
         int vao = glGenVertexArrays();
@@ -72,9 +65,6 @@ public final class GLQuad {
                         1f, 1f
                 };
                 glBufferData(GL_ARRAY_BUFFER, vertices, GL_STATIC_DRAW);
-
-                glEnableVertexAttribArray(LOCATION_QUAD);
-                glVertexAttribPointer(LOCATION_QUAD, 2, GL_FLOAT, false, 8, 0L);
             } finally {
                 glBindVertexArray(0);
                 glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -88,13 +78,44 @@ public final class GLQuad {
     }
 
     // ═══════════════════════════════════════════════
+    // Attribute 配置（由使用方调用）
+    // ═══════════════════════════════════════════════
+
+    /**
+     * 声明顶点位置的 attribute location。
+     *
+     * <p>使用方知道它的 shader 里 {@code layout(location = N) in vec2 aPos}
+     * 的 N——传进来，本类把它绑到 VAO。
+     *
+     * <p><b>每个 quad 实例调一次</b>——配置存入 VAO 后一直有效，
+     * 后续 {@link #drawInstanced} 自动应用。
+     *
+     * @param location 顶点位置的 attribute location，必须 ≥ 0
+     * @throws IllegalArgumentException location &lt; 0
+     */
+    public void bindPositionAttribute(int location) {
+        checkAlive();
+        if (location < 0) {
+            throw new IllegalArgumentException(
+                    "location must be >= 0: " + location);
+        }
+        glBindVertexArray(vao);
+        try {
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
+            glEnableVertexAttribArray(location);
+            glVertexAttribPointer(location, 2, GL_FLOAT, false, 8, 0L);
+        } finally {
+            glBindVertexArray(0);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+        }
+    }
+
+    // ═══════════════════════════════════════════════
     // 使用
     // ═══════════════════════════════════════════════
 
     /**
      * 绑定 VAO，使 vertex attribute 配置生效。
-     *
-     * <p>绑定后 instance buffer 的 upload 和 draw 都作用于此 VAO。
      */
     public void bind() {
         checkAlive();
@@ -108,9 +129,6 @@ public final class GLQuad {
 
     /**
      * 实例化绘制。
-     *
-     * <p>对应 {@code glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, count)}。
-     * 调用前必须已 {@link #bind()} 并上传了 instance 数据。
      *
      * @param instanceCount 实例数（tile 数）
      */
