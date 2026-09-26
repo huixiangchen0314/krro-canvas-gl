@@ -222,8 +222,8 @@ public final class CompositePlanner {
                             lei = layerTable.size();
                             layerEntryMap.put(layer, lei);
                             layerTable.add(new float[]{
-                                    inv[0], inv[1], inv[2], inv[3], inv[4], inv[5],
-                                    alpha, 0f
+                                    inv[0], inv[1], inv[2], inv[3],
+                                    inv[4], inv[5], alpha, 0f
                             });
                         }
                         idx = visible.size();

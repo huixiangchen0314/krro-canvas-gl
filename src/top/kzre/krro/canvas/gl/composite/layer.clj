@@ -11,8 +11,8 @@
     (:id layer)
     (:canvas layer)
     (:transform layer)
-    (:visible layer)
-    (:opacity layer)
+    (:visible layer true)
+    (:opacity layer 1.0)
     (str (:blend-mode layer :normal))))
 
 

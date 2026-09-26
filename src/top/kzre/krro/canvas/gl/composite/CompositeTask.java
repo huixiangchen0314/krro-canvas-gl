@@ -297,11 +297,9 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                 MemoryUtil.memFree(fb);
             }
 
-            glBindTexture(GL_TEXTURE_BUFFER, tex);
-            glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, buf);
-
-            glActiveTexture(GL_TEXTURE0 + unit);
-            glBindTexture(GL_TEXTURE_BUFFER, tex);
+            glActiveTexture(GL_TEXTURE0 + unit);      // ← 先切 unit
+            glBindTexture(GL_TEXTURE_BUFFER, tex);    // ← 再绑纹理
+            glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, buf);  // ← 最后附 buffer
         } catch (Throwable t) {
             glDeleteBuffers(buf);
             glDeleteTextures(tex);
@@ -323,11 +321,9 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                 MemoryUtil.memFree(ib);
             }
 
-            glBindTexture(GL_TEXTURE_BUFFER, tex);
-            glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, buf);
-
             glActiveTexture(GL_TEXTURE0 + unit);
             glBindTexture(GL_TEXTURE_BUFFER, tex);
+            glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, buf);
         } catch (Throwable t) {
             glDeleteBuffers(buf);
             glDeleteTextures(tex);

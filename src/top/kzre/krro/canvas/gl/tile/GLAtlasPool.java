@@ -209,7 +209,7 @@ public final class GLAtlasPool implements AutoCloseable {
      * 取出一个空闲的 atlas（所有瓦片均已释放）。
      *
      * <p><b>转移语义</b>：atlas 从池中移除，所有权交给调用方。
-     * 调用方负责 {@link GLAtlas#release()} 释放底层纹理。
+     * 调用方负责 {@link GLAtlas#close()} 释放底层纹理。
      *
      * @return 被取出的 atlas；没有空闲 atlas 时返回 {@code null}
      */
@@ -255,7 +255,7 @@ public final class GLAtlasPool implements AutoCloseable {
     @Override
     public void close() {
         for (GLAtlas atlas : atlases) {
-            atlas.release();
+            atlas.close();
         }
         atlases.clear();
     }
@@ -374,7 +374,7 @@ public final class GLAtlasPool implements AutoCloseable {
     /** 取出并释放所有空闲 atlas。 */
     private void releaseIdle() {
         for (GLAtlas idle : extractAllIdle()) {
-            idle.release();
+            idle.close();
         }
     }
 }

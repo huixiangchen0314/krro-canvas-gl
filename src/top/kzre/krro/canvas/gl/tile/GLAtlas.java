@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * GL 图集：管理一张 {@link GLTexture} 中所有瓦片槽位的分配与释放。
@@ -38,7 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li>{@link GLTileDataImpl#markDirty()} —— 任意线程</li>
  * </ul>
  */
-public final class GLAtlas implements GLBindable {
+public final class GLAtlas implements GLBindable, AutoCloseable {
 
     /** 私有锁，避免外部用 {@code synchronized (atlas)} 干扰。 */
     private final Object lock = new Object();
@@ -51,7 +52,7 @@ public final class GLAtlas implements GLBindable {
     private final GLTileDataImpl[] tiles;
     private final int capacity;
 
-    private boolean released;
+    private boolean closed;
 
     // ═══════════════════════════════════════════════
     // 构造
@@ -87,7 +88,7 @@ public final class GLAtlas implements GLBindable {
         this.capacity  = layout.getCapacity();
         this.tiles     = new GLTileDataImpl[capacity];
         this.allocated = new BitSet(capacity);
-        this.released  = false;
+        this.closed = false;
     }
 
     public GLTiledTextureLayout getLayout() { return layout; }
@@ -340,13 +341,13 @@ public final class GLAtlas implements GLBindable {
         Handle oldHandle = tile.handle;
         tile.rebind(newHandle);
         dst.registerTile(newHandle.getIndex(), tile);
-        oldHandle.free();
+        oldHandle.close();
 
         return true;
     }
 
     /** 当前所有活跃 tile 的快照。 */
-    public List<GLTileDataImpl> getActiveTiles() {
+    List<GLTileDataImpl> getActiveTiles() {
         List<GLTileDataImpl> result = new ArrayList<>();
         synchronized (lock) {
             for (int i = allocated.nextSetBit(0);
@@ -369,12 +370,13 @@ public final class GLAtlas implements GLBindable {
      * 释放底层纹理。必须在 GL 线程上调用。幂等。
      * 释放后所有已分配的 Handle 失效。
      */
-    public void release() {
+    @Override
+    public void close() {
         synchronized (lock) {
-            if (released) return;
+            if (closed) return;
             texPool.release(texture);
             allocated.clear();
-            released = true;
+            closed = true;
         }
     }
 
@@ -443,8 +445,8 @@ public final class GLAtlas implements GLBindable {
      *
      * <h2>生命周期</h2>
      *
-     * <p>{@link #released} 标记该 handle 是否仍然指向 atlas 中的有效槽位。
-     * {@link #free()} 将其置 false 并清空 atlas 中对应的位图和引用——
+     * <p>{@link #closed} 标记该 handle 是否仍然指向 atlas 中的有效槽位。
+     * {@link #close()} 将其置 false 并清空 atlas 中对应的位图和引用——
      * 之后对该 handle 的任何操作要么是 no-op（{@code free} 幂等），
      * 要么抛出异常（若校验）。
      *
@@ -458,7 +460,9 @@ public final class GLAtlas implements GLBindable {
         private final int layer;
         private final int dataColumn;
         private final int dataRow;
-        private boolean released = true;
+
+        /** 关闭标记。CAS 保证 check-then-act 原子——并发 close 只有一个成功。 */
+        private final AtomicBoolean closed = new AtomicBoolean(false);
 
         Handle(int index, int layer, int dataColumn, int dataRow) {
             this.index = index;
@@ -467,29 +471,46 @@ public final class GLAtlas implements GLBindable {
             this.dataRow = dataRow;
         }
 
-        int getIndex() { return index; }
-        int getLayer() { return layer; }
-        int getDataColumn()   { return dataColumn; }
-        int getDataRow()   { return dataRow; }
+        int getIndex()       { return index; }
+        int getLayer()       { return layer; }
+        int getDataColumn()  { return dataColumn; }
+        int getDataRow()     { return dataRow; }
 
-        GLAtlas getGLAtlas() { return GLAtlas.this; }
+        GLAtlas getGLAtlas()         { return GLAtlas.this; }
         PixelFormat getPixelFormat() { return texture.getPixelFormat(); }
 
-        void free() {
-            if (!released) return;
-            released = false;
+        /**
+         * 关闭本槽位句柄。释放 atlas 中的槽位。
+         *
+         * <p><b>不可重入</b>——重复调用抛 {@link IllegalStateException}。
+         *
+         * <p><b>并发安全</b>：{@code closed} 是 {@link AtomicBoolean}，
+         * {@code close()} 走 CAS——多个线程同时调用只有一个成功翻转，
+         * 其余抛异常。不会出现两次 {@code freeTile}。
+         *
+         * <p>之前版本用 {@code if (!closed) return} 静默返回是写反了逻辑——
+         * 未关闭时不执行释放。当前版本语义是"恰好一次"。
+         */
+        void close() {
+            if (!closed.compareAndSet(false, true)) {
+                throw new IllegalStateException(
+                        "Handle already closed: layer=" + layer
+                                + ", dataColumn=" + dataColumn
+                                + ", dataRow=" + dataRow);
+            }
             freeTile(index);
         }
 
         /** 上传本瓦片到层内的子矩形。 */
         void upload(ByteBuffer buffer) {
-            if (released) {
+            if (closed.get()) {
                 throw new IllegalStateException(
-                        "Handle already freed: layer=" + layer
+                        "Handle already closed: layer=" + layer
                                 + ", dataColumn=" + dataColumn
                                 + ", dataRow=" + dataRow);
             }
             int tileSize = layout.getTileSize();
+
             texture.uploadRegion(
                     layer,
                     dataColumn * tileSize,
@@ -531,11 +552,16 @@ public final class GLAtlas implements GLBindable {
         /** 跨线程访问 */
         private final AtomicBoolean dirty = new AtomicBoolean(true);
         private GLAtlas.Handle handle;
-        private final int initRef;
+
+        /**
+         *代理的 refCount,与 peer 的引用计数分别处理
+         * 初始构造为1，调用工厂的TiledCanvas 持有
+         */
+        private final AtomicInteger proxyRefCount = new AtomicInteger(1);
+
         private GLTileDataImpl(TileData peer, GLAtlas.Handle handle) {
             this.peer   = peer;
             this.handle = handle;
-            initRef = peer.refCount();
         }
 
         @Override
@@ -568,7 +594,7 @@ public final class GLAtlas implements GLBindable {
             GLTileDataImpl gl = tile.queryData(GLTileDataImpl.class);
             if (gl == null) return;
             tile.replaceData(gl.peer);
-            gl.handle.free();
+            gl.handle.close();
         }
 
         @Override
@@ -618,28 +644,25 @@ public final class GLAtlas implements GLBindable {
         @Override
         public int acquire() {
             int c = peer.acquire();
+            proxyRefCount.incrementAndGet();
             System.out.println("[GLTileDataImpl#acquire] -> " + c + " " + this
                     + " at " + DEBUG.stack());
             return c;
         }
 
-
+        // TODO 更加详细考虑
         @Override
         public int release() {
-            int before = peer.refCount();
-            int after  = peer.release();
-            boolean free = (after == initRef - 1);
 
+            int after  = peer.release();
+            boolean free = proxyRefCount.decrementAndGet() == 0;
             System.out.println("[GLTileDataImpl#release]"
-                    + " before=" + before
-                    + " after=" + after
-                    + " initRef=" + initRef
-                    + " freeHandle=" + free
                     + " " + this
-                    + " at " + DEBUG.stack());
+                    + "free: " + free
+                    + " at \n" + DEBUG.stack());
 
             if (free) {
-                handle.free();
+                handle.close();
             }
             return after;
         }
@@ -654,20 +677,59 @@ public final class GLAtlas implements GLBindable {
 
             FloatBuffer src = peer.floatBuffer();
             int needFloats = PixelCodec.cpuFloats(fmt, pixelCount);
-            if (src.remaining() < needFloats) {
+            if (src.remaining() != needFloats) {
                 throw new IllegalStateException(
-                        "peer data too small: expected " + needFloats
+                        "peer data size mismatch: expected exactly " + needFloats
                                 + " floats, got " + src.remaining());
             }
 
             int needBytes = PixelCodec.gpuBytes(fmt, pixelCount);
             ByteBuffer tmp = MemoryUtil.memAlloc(needBytes);
+
+            System.out.println("[upload.begin]"
+                    + " tileSize=" + tileSize
+                    + " pixelCount=" + pixelCount
+                    + " fmt.internal=0x" + Integer.toHexString(fmt.getGlInternalFormat())
+                    + " fmt.client=0x" + Integer.toHexString(fmt.getGlClientFormat())
+                    + " fmt.type=0x" + Integer.toHexString(fmt.getGlType())
+                    + " channels=" + PixelCodec.channels(fmt)
+                    + " src.remaining=" + src.remaining()
+                    + " needFloats=" + needFloats
+                    + " needBytes=" + needBytes
+                    + " peer.class=" + peer.getClass().getSimpleName());
+
             try {
                 FloatBuffer slice = src.slice();
                 slice.limit(needFloats);
+                System.out.println("[upload.beforePack] slice.remaining=" + slice.remaining()
+                        + " tmp.capacity=" + tmp.capacity()
+                        + " tmp.position=" + tmp.position()
+                        + " tmp.limit=" + tmp.limit());
+
                 PixelCodec.pack(fmt, slice, pixelCount, tmp);
+
+                System.out.println("[upload.afterPack] tmp.position=" + tmp.position()
+                        + " tmp.limit=" + tmp.limit()
+                        + " tmp.remaining=" + tmp.remaining());
+
                 tmp.flip();
+
+                System.out.println("[upload.afterFlip] tmp.position=" + tmp.position()
+                        + " tmp.limit=" + tmp.limit()
+                        + " tmp.remaining=" + tmp.remaining()
+                        + " expectedBytes=" + needBytes
+                        + " matches=" + (tmp.remaining() == needBytes));
+
+                // 前 32 字节的 hex——看 pack 是否真的写了非零
+                int peek = Math.min(32, tmp.remaining());
+                StringBuilder hex = new StringBuilder();
+                for (int i = 0; i < peek; i++) {
+                    hex.append(String.format("%02x ", tmp.get(i) & 0xFF));
+                }
+                System.out.println("[upload.bytes] first " + peek + ": " + hex);
+
                 handle.upload(tmp);
+                System.out.println("[upload.done]");
             } finally {
                 MemoryUtil.memFree(tmp);
             }
