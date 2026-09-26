@@ -102,15 +102,16 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
         int tilesPerRow    = tilesPerRow();
         int tilesPerColumn = tilesPerColumn();
 
+        // TODO FIX 宽度编码。
         for (int i = 0; i < layerCount; i++) {
             int layer = layerOffset + i;
-            for (int sy = 0; sy < tilesPerColumn; sy++) {
-                for (int sx = 0; sx < tilesPerRow; sx++) {
-                    int ty = layer * tilesPerColumn + sy;
+            for (int row = 0; row < tilesPerColumn; row++) {
+                for (int col = 0; col < tilesPerRow; col++) {
+                    int ty = layer * tilesPerColumn + row;
                     activeTiles.incrementAndGet();
-                    int finalSx = sx;
-                    int finalSy = sy;
-                    canvas.replaceTile(sx, ty, ()->new GLTextureTileDataImpl(this, layer, finalSx, finalSy));
+                    int finalCol = col;
+                    int finalRow = row;
+                    canvas.replaceTile(col, ty, ()->new GLTextureTileDataImpl(this, layer, finalCol, finalRow));
                 }
             }
         }
@@ -192,14 +193,14 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
 
         private final AbstractGLTiledTexture owner;
         private final int layer;
-        private final int sx, sy;
+        private final int column, row;
 
         GLTextureTileDataImpl(AbstractGLTiledTexture owner,
-                              int layer, int sx, int sy) {
+                              int layer, int column, int row) {
             this.owner = owner;
             this.layer = layer;
-            this.sx    = sx;
-            this.sy    = sy;
+            this.column = column;
+            this.row = row;
         }
 
         @Override
@@ -214,10 +215,11 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
             }
             int tilesPerRow    = owner.tilesPerRow();
             int tilesPerColumn = owner.tilesPerColumn();
+            // TODO 方向正确了吗？
             return GLTileDescriptor.of(
                     layer, owner.tileSize(),
-                    (float) sx / tilesPerRow,     // u0
-                    (float) sy / tilesPerColumn); // v0
+                    (float) column / tilesPerRow,
+                    (float) row / tilesPerColumn);
         }
 
         @Override
@@ -227,11 +229,11 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
                 throw new IllegalStateException("GLTextureTileDataImpl already released, refCount=" + refCount);
             }
             System.out.println("GLTextureTileDataImpl.downloadTo, refCount=" + refCount);
-            int ts = owner.tileSize();
+            int tileSize = owner.tileSize();
             int targetTs = target.getTileSize();
-            if (ts != targetTs) {
+            if (tileSize != targetTs) {
                 throw new IllegalArgumentException(
-                        "tile size mismatch: source=" + ts + ", target=" + targetTs);
+                        "tile size mismatch: source=" + tileSize + ", target=" + targetTs);
             }
 
             PixelFormat fmt = owner.texture().getPixelFormat();
@@ -244,14 +246,14 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
                                 + ", fmt=" + fmt);
             }
 
-            int pixelCount = ts * ts;
+            int pixelCount = tileSize * tileSize;
 
             return owner.glExecutor.submit(() -> {
                 ByteBuffer packed = null;
                 ByteBuffer out = null;
                 try {
                     packed = owner.texture().downloadRegion(
-                            layer, sx * ts, sy * ts, ts, ts);
+                            layer, column * tileSize, row * tileSize, tileSize, tileSize);
 
                     int needFloats = PixelCodec.cpuFloats(fmt, pixelCount);
                     out = MemoryUtil.memAlloc(needFloats * Float.BYTES);
