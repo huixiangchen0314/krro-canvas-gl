@@ -195,13 +195,13 @@ public final class GLAtlas implements GLBindable {
      * <p><b>线程契约</b>：必须在 GL 线程上调用。
      *
      * @param layer texture array 层索引，{@code [0, layout.getLayers())}
-     * @param col   层内列坐标（u 方向），{@code [0, tilesPerEdge)}
-     * @param row   层内行坐标（v 方向），{@code [0, tilesPerEdge)}
+     * @param dataColumn   层内列坐标（u 方向），{@code [0, tilesPerEdge)}
+     * @param dataRow   层内行坐标（v 方向），{@code [0, tilesPerEdge)}
      * @param peer  瓦片数据，独占
-     * @throws IndexOutOfBoundsException layer / col / row 越界
+     * @throws IndexOutOfBoundsException layer / dataColumn / dataRow 越界
      * @throws IllegalStateException     peer 非独占、已是 GPU 瓦片、或槽位已占用
      */
-    public GLTileDataImpl allocateAt(int layer, int col, int row, TileData peer) {
+    public GLTileDataImpl allocateAt(int layer, int dataColumn, int dataRow, TileData peer) {
         if (peer instanceof GLTile) {
             throw new IllegalStateException(
                     "peer is already GPU-backed (class = "
@@ -209,7 +209,7 @@ public final class GLAtlas implements GLBindable {
                             + "); allocateAt requires a fresh CPU peer");
         }
 
-        int index = encodeIndex(layer, col, row);
+        int index = encodeIndex(layer, dataColumn, dataRow);
         Handle handle = allocateHandleAt(index);
         GLTileDataImpl tile = new GLTileDataImpl(peer, handle);
         registerTile(index, tile);
@@ -233,8 +233,8 @@ public final class GLAtlas implements GLBindable {
     // 索引编解码
     // ═══════════════════════════════════════════════
 
-    /** 把 (layer, col, row) 编码为全局索引。越界抛异常。 */
-    private int encodeIndex(int layer, int col, int row) {
+    /** 把 (layer, dataColumn, dataRow) 编码为全局索引。越界抛异常。 */
+    private int encodeIndex(int layer, int dataColumn, int dataRow) {
         int layers        = layout.getLayers();
         int tilesPerEdge  = layout.getTilesPerEdge();
         int tilesPerLayer = layout.getTilesPerLayer();
@@ -243,15 +243,15 @@ public final class GLAtlas implements GLBindable {
             throw new IndexOutOfBoundsException(
                     "layer " + layer + " out of [0, " + layers + ")");
         }
-        if (col < 0 || col >= tilesPerEdge) {
+        if (dataColumn < 0 || dataColumn >= tilesPerEdge) {
             throw new IndexOutOfBoundsException(
-                    "col " + col + " out of [0, " + tilesPerEdge + ")");
+                    "dataColumn " + dataColumn + " out of [0, " + tilesPerEdge + ")");
         }
-        if (row < 0 || row >= tilesPerEdge) {
+        if (dataRow < 0 || dataRow >= tilesPerEdge) {
             throw new IndexOutOfBoundsException(
-                    "row " + row + " out of [0, " + tilesPerEdge + ")");
+                    "dataRow " + dataRow + " out of [0, " + tilesPerEdge + ")");
         }
-        return layer * tilesPerLayer + row * tilesPerEdge + col;
+        return layer * tilesPerLayer + dataRow * tilesPerEdge + dataColumn;
     }
 
     /** 把全局索引解码为 Handle。 */
@@ -260,9 +260,9 @@ public final class GLAtlas implements GLBindable {
         int tilesPerEdge  = layout.getTilesPerEdge();
         int layer = index / tilesPerLayer;
         int local = index % tilesPerLayer;
-        int col   = local % tilesPerEdge;
-        int row   = local / tilesPerEdge;
-        return new Handle(index, layer, col, row);
+        int dataColumn   = local % tilesPerEdge;
+        int dataRow   = local / tilesPerEdge;
+        return new Handle(index, layer, dataColumn, dataRow);
     }
 
     /** 在指定索引分配 Handle。已占用则抛异常。 */
@@ -390,31 +390,10 @@ public final class GLAtlas implements GLBindable {
     }
 
     /**
-     * 查询指定槽位当前的瓦片。
-     *
-     * <p>返回该位置已分配的 {@link GLTileDataImpl}；空槽位返回 {@code null}。
-     * 用于规划阶段探查 atlas 现状，决定是命中缓存、换页还是新分配。
-     *
-     * <p><b>线程契约</b>：任意线程可读。内部用 {@code lock} 保护。
-     *
-     * @param layer 层索引
-     * @param col   层内列
-     * @param row   层内行
-     * @return 该槽位的 GLTileData；空槽位返回 null
-     * @throws IndexOutOfBoundsException layer / col / row 越界
-     */
-    public GLTileDataImpl getTileAt(int layer, int col, int row) {
-        int index = encodeIndex(layer, col, row);
-        synchronized (lock) {
-            return tiles[index];
-        }
-    }
-
-    /**
      * 查询指定槽位是否已占用。
      */
-    public boolean isOccupiedAt(int layer, int col, int row) {
-        int index = encodeIndex(layer, col, row);
+    public boolean isOccupiedAt(int layer, int dataColumn, int dataRow) {
+        int index = encodeIndex(layer, dataColumn, dataRow);
         synchronized (lock) {
             return allocated.get(index);
         }
@@ -425,42 +404,96 @@ public final class GLAtlas implements GLBindable {
     // ═══════════════════════════════════════════════
 
     /**
-     * 瓦片槽位句柄。携带解码后的 {@code (layer, col, row)}。
+     * 瓦片槽位句柄。携带解码后的 {@code (layer, dataColumn, dataRow)}。
+     *
+     * <h2>dataColumn / dataRow 的语义</h2>
+     *
+     * <p>这两个值描述"这块瓦片放在 atlas 纹理层的第几列、第几行"——
+     * 是 <b>atlas 数据布局坐标</b>，<b>没有方向语义</b>。
+     *
+     * <p>它们由线性槽位索引 {@code index} 解码而来：
+     * <pre>
+     *   layer      = index / tilesPerLayer
+     *   local      = index % tilesPerLayer
+     *   dataColumn = local % tilesPerEdge
+     *   dataRow    = local / tilesPerEdge
+     * </pre>
+     * 分配算法线性扫描空槽位，{@code dataRow} 只是"第几个空槽位落在第几
+     * 行"，与屏幕位置、图层网格没有任何对应关系。
+     *
+     * <h2>与带方向语义坐标的区别</h2>
+     *
+     * <p>项目里其他"行"坐标是带方向的——{@code canvas} 网格行 y 向下
+     * （顶行是 0），GL 纹理行 y 向上（底行是 0）。跨这两套坐标系的
+     * 转换需要在转换点显式翻转（{@code height - 1 - row}）。
+     *
+     * <p>{@code dataColumn} / {@code dataRow} <b>不属于任何一套</b>：
+     * <ul>
+     *   <li>作为纹理坐标传给 {@code glTexSubImage3D} 的 {@code (x, y)} 时——
+     *       直接乘 {@code tileSize}，不翻。它在此处被当作 GL 纹理坐标使用，
+     *       与数据的采样方向由 shader 侧保证一致</li>
+     *   <li>转成 {@code GLTileDescriptor} 的 uv 起点时——
+     *       {@code u = dataColumn / tilesPerEdge}、
+     *       {@code v = dataRow / tilesPerEdge}，同样不翻</li>
+     * </ul>
+     *
+     * <p>与其叫 {@code col / row} 容易让人误以为有方向，这里用
+     * {@code dataColumn / dataRow} 明确它是"数据放在哪一格"，方向由
+     * 使用它的上下文决定。
+     *
+     * <h2>生命周期</h2>
+     *
+     * <p>{@link #released} 标记该 handle 是否仍然指向 atlas 中的有效槽位。
+     * {@link #free()} 将其置 false 并清空 atlas 中对应的位图和引用——
+     * 之后对该 handle 的任何操作要么是 no-op（{@code free} 幂等），
+     * 要么抛出异常（若校验）。
+     *
+     * <h2>线程契约</h2>
+     *
+     * <p>字段可变（{@code valid} 的翻转），访问完全在 GL 线程内——
+     * atlas 的分配、上传、释放路径全部由 GL 线程驱动。
      */
     private final class Handle {
         private final int index;
         private final int layer;
-        private final int col, row;
-        private boolean valid = true;
+        private final int dataColumn;
+        private final int dataRow;
+        private boolean released = true;
 
-        Handle(int index, int layer, int col, int row) {
+        Handle(int index, int layer, int dataColumn, int dataRow) {
             this.index = index;
             this.layer = layer;
-            this.col   = col;
-            this.row   = row;
+            this.dataColumn = dataColumn;
+            this.dataRow = dataRow;
         }
 
         int getIndex() { return index; }
         int getLayer() { return layer; }
-        int getCol()   { return col; }
-        int getRow()   { return row; }
+        int getDataColumn()   { return dataColumn; }
+        int getDataRow()   { return dataRow; }
 
         GLAtlas getGLAtlas() { return GLAtlas.this; }
         PixelFormat getPixelFormat() { return texture.getPixelFormat(); }
 
         void free() {
-            if (!valid) return;
-            valid = false;
+            if (!released) return;
+            released = false;
             freeTile(index);
         }
 
         /** 上传本瓦片到层内的子矩形。 */
         void upload(ByteBuffer buffer) {
+            if (released) {
+                throw new IllegalStateException(
+                        "Handle already freed: layer=" + layer
+                                + ", dataColumn=" + dataColumn
+                                + ", dataRow=" + dataRow);
+            }
             int tileSize = layout.getTileSize();
             texture.uploadRegion(
                     layer,
-                    col * tileSize,
-                    row * tileSize,
+                    dataColumn * tileSize,
+                    dataRow * tileSize,
                     tileSize,
                     tileSize,
                     buffer);
@@ -474,8 +507,8 @@ public final class GLAtlas implements GLBindable {
     public interface GLTileData {
         GLAtlas getAtlas();
         int getLayer();
-        int getCol();
-        int getRow();
+        int getDataColumn();
+        int getDataRow();
     }
 
     /**
@@ -547,8 +580,8 @@ public final class GLAtlas implements GLBindable {
             return GLTileDescriptor.of(
                     handle.getLayer(),
                     layout.getTileSize(),
-                    (float) handle.getCol() / edge,
-                    (float) handle.getRow() / edge);
+                    (float) handle.getDataColumn() / edge,
+                    (float) handle.getDataRow() / edge);
         }
 
         /**
@@ -593,14 +626,22 @@ public final class GLAtlas implements GLBindable {
 
         @Override
         public int release() {
-            int count = peer.release();
-            System.out.println("[GLTileDataImpl#release] -> " + count + " " + this
+            int before = peer.refCount();
+            int after  = peer.release();
+            boolean free = (after == initRef - 1);
+
+            System.out.println("[GLTileDataImpl#release]"
+                    + " before=" + before
+                    + " after=" + after
+                    + " initRef=" + initRef
+                    + " freeHandle=" + free
+                    + " " + this
                     + " at " + DEBUG.stack());
 
-            if (count == initRef - 1) {
+            if (free) {
                 handle.free();
             }
-            return count;
+            return after;
         }
 
         // ── 上传 ─────────────────────────────────────
@@ -643,13 +684,13 @@ public final class GLAtlas implements GLBindable {
         }
 
         @Override
-        public int getCol() {
-            return handle.getCol();
+        public int getDataColumn() {
+            return handle.getDataColumn();
         }
 
         @Override
-        public int getRow() {
-            return handle.getRow();
+        public int getDataRow() {
+            return handle.getDataRow();
         }
 
         @Override
@@ -658,8 +699,8 @@ public final class GLAtlas implements GLBindable {
             return super.toString() + "{"
                     + "atlas=" + System.identityHashCode(atlas)
                     + ", layer=" + handle.getLayer()
-                    + ", row=" + handle.getRow()
-                    + ", col=" + handle.getCol()
+                    + ", row=" + handle.getDataRow()
+                    + ", col=" + handle.getDataColumn()
                     + ", dirty=" + dirty.get()
                     + ", refs=" + peer.refCount()
                     + ", peer=" + peer.getClass().getSimpleName()

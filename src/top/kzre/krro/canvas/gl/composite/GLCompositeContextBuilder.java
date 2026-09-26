@@ -1,5 +1,7 @@
 package top.kzre.krro.canvas.gl.composite;
 
+import top.kzre.colorutils.blend.Blends;
+import top.kzre.krro.canvas.gl.resource.GLProgramCache;
 import top.kzre.krro.canvas.gl.resource.PixelFormat;
 import top.kzre.krro.canvas.gl.tile.GLAtlasFactory;
 import top.kzre.krro.canvas.gl.tile.GLAtlasPool;
@@ -122,9 +124,12 @@ public final class GLCompositeContextBuilder {
         return glExecutor.submit(() -> {
             GLAtlasPool pool = new GLAtlasPool(atlasCapacity, atlasFactory);
             pool.warmup();
-            return new GLCompositeContext(
+            GLCompositeContext context = new GLCompositeContext(
                     glExecutor, pool, tileSize,
                     viewFboPoolCapacity, pixelFormat);
+            GLProgramCache programCache = context.getProgramCache();
+            programCache.get(Blends.NORMAL);
+            return context;
         });
     }
 }

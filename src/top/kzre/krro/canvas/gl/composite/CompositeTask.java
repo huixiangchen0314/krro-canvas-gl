@@ -81,6 +81,16 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
             return pool[0];
         }
 
+        for (GLFramebuffer fbo : pool) {
+            fbo.bind();
+            try {
+                glClearColor(0f, 0f, 0f, 0f);
+                glClear(GL_COLOR_BUFFER_BIT);
+            } finally {
+                GLFramebuffer.unbind();
+            }
+        }
+
         GLQuad quad = context.getQuad();
         List<TileBufferBundle> executed = new ArrayList<>();
 
@@ -119,9 +129,6 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                     // 3. 渲染
                     target.bind();
                     try {
-                        glClearColor(0f, 0f, 0f, 0f);
-                        glClear(GL_COLOR_BUFFER_BIT);
-
                         shader.bind();
                         try {
                             quad.drawInstanced(viewport.getViewTileCount());
@@ -239,6 +246,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
     private void uploadIfNeeded(TileRef ref) {
         UploadableTile uploadable = ref.getTile().queryData(UploadableTile.class);
         if (uploadable != null) {
+            System.out.println("upload tile");
             uploadable.ensureUploaded();
         }
     }

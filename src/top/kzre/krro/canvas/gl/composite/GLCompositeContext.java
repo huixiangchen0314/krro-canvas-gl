@@ -81,6 +81,8 @@ public class GLCompositeContext implements AutoCloseable {
     private volatile int viewWidth;
     private volatile int viewHeight;
 
+    private final CompositeGLProgramManager glProgramManager = new CompositeGLProgramManager();
+
     // ═══════════════════════════════════════════════
     // 构造
     // ═══════════════════════════════════════════════
@@ -326,6 +328,10 @@ public class GLCompositeContext implements AutoCloseable {
         return emptyCanvasTpl.copy().setReadonly(true);
     }
 
+    public GLProgramCache getProgramCache()
+    {
+        return glProgramManager.getCache();
+    }
 
     private static int alignUp(int value, int multiple) {
         return ((value + multiple - 1) / multiple) * multiple;

@@ -8,11 +8,20 @@ package top.kzre.krro.canvas.gl.tile;
  *
  * <p><b>字段语义</b>：
  * <ul>
- *   <li>{@code unit}  —— 纹理单元。多 atlas 场景下区分 atlas。</li>
- *   <li>{@code layer} —— texture array 的层索引。</li>
- *   <li>{@code row}   —— 层内行坐标。对应 atlas 内部 v 方向。</li>
- *   <li>{@code col}   —— 层内列坐标。对应 atlas 内部 u 方向。</li>
+ *   <li>{@code atlasIndex} —— atlas 在池中的下标，多 atlas 场景下区分。</li>
+ *   <li>{@code layer}      —— texture array 的层索引。</li>
+ *   <li>{@code dataRow}    —— 层内行。atlas 槽位网格的第几行——
+ *       <b>无方向语义</b>，不表示 v 方向，也不表示 canvas 行。</li>
+ *   <li>{@code dataColumn} —— 层内列。同上，无方向语义。</li>
  * </ul>
+ *
+ * <p><b>为什么无方向</b>：槽位坐标只是"数据放在 atlas 第几格"。
+ * 上传时被当 GL 纹理坐标（{@code y = dataRow * tileSize}），转
+ * {@link GLTileDescriptor} 时被当 uv 起点（{@code v0 = dataRow / edge}）——
+ * 两种用法都不需要翻转。方向由<b>使用方</b>决定，不是槽位本身的属性。
+ *
+ * <p>对比 canvas 网格坐标（{@code canvasRow}）——那套 y 向下，跨到
+ * GL 坐标时要翻。两套命名不同，一眼区分。
  *
  * <p><b>与 atlas 的对应</b>：{@code (layer, row, col)} 唯一确定 atlas
  * 内部的一个槽位。atlas 的 {@code tilesPerEdge} 决定行列上界。
@@ -33,23 +42,23 @@ public final class AtlasSlot {
     /** texture array 层索引。 */
     private final int layer;
 
-    /** 层内行坐标（v 方向）。 */
-    private final int row;
+    /** 层内行——atlas 槽位网格的第几行。无方向语义。 */
+    private final int dataRow;
 
-    /** 层内列坐标（u 方向）。 */
-    private final int col;
+    /** 层内列——atlas 槽位网格的第几列。无方向语义。 */
+    private final int dataColumn;
 
-    public AtlasSlot(int atlasIndex, int layer, int row, int col) {
+    public AtlasSlot(int atlasIndex, int layer, int dataRow, int dataColumn) {
         this.atlasIndex = atlasIndex;
         this.layer = layer;
-        this.row   = row;
-        this.col   = col;
+        this.dataRow = dataRow;
+        this.dataColumn = dataColumn;
     }
 
     public int getAtlasIndex()  { return atlasIndex; }
     public int getLayer() { return layer; }
-    public int getRow()   { return row; }
-    public int getCol()   { return col; }
+    public int getDataRow()   { return dataRow; }
+    public int getDataColumn()   { return dataColumn; }
 
     // ═══════════════════════════════════════════════
     // Object
@@ -62,16 +71,16 @@ public final class AtlasSlot {
         AtlasSlot that = (AtlasSlot) o;
         return atlasIndex == that.atlasIndex
                 && layer == that.layer
-                && row   == that.row
-                && col   == that.col;
+                && dataRow == that.dataRow
+                && dataColumn == that.dataColumn;
     }
 
     @Override
     public int hashCode() {
         int h = atlasIndex;
         h = 31 * h + layer;
-        h = 31 * h + row;
-        h = 31 * h + col;
+        h = 31 * h + dataRow;
+        h = 31 * h + dataColumn;
         return h;
     }
 
@@ -79,7 +88,7 @@ public final class AtlasSlot {
     public String toString() {
         return "AtlasSlot{unit=" + atlasIndex
                 + ", layer=" + layer
-                + ", row=" + row
-                + ", col=" + col + "}";
+                + ", row=" + dataRow
+                + ", col=" + dataColumn + "}";
     }
 }

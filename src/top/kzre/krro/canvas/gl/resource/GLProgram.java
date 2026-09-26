@@ -282,6 +282,48 @@ public final class GLProgram {
         released = true;
     }
 
+    /**
+     * 查询 uniform location——找不到返回 -1，不抛异常。
+     * 用于"调用方不确定 uniform 是否被优化掉"的场景。
+     */
+    public int uniformLocationOptional(String name) {
+        Integer cached = uniformLocations.get(name);
+        if (cached != null) return cached;
+        int loc = glGetUniformLocation(handle, name);
+        uniformLocations.put(name, loc);   // 缓存 -1 避免重复查询
+        return loc;
+    }
+
+    /** 上传 int uniform——不存在时静默跳过。 */
+    public void setIntIfPresent(String name, int v) {
+        int loc = uniformLocationOptional(name);
+        if (loc >= 0) glUniform1i(loc, v);
+    }
+
+    /** 上传 float uniform——不存在时静默跳过。 */
+    public void setFloatIfPresent(String name, float v) {
+        int loc = uniformLocationOptional(name);
+        if (loc >= 0) glUniform1f(loc, v);
+    }
+
+    /** 上传 vec2 uniform——不存在时静默跳过。 */
+    public void setVec2IfPresent(String name, float x, float y) {
+        int loc = uniformLocationOptional(name);
+        if (loc >= 0) glUniform2f(loc, x, y);
+    }
+
+    /** 上传 vec3 uniform——不存在时静默跳过。 */
+    public void setVec3IfPresent(String name, float x, float y, float z) {
+        int loc = uniformLocationOptional(name);
+        if (loc >= 0) glUniform3f(loc, x, y, z);
+    }
+
+    /** 上传 vec4 uniform——不存在时静默跳过。 */
+    public void setVec4IfPresent(String name, float x, float y, float z, float w) {
+        int loc = uniformLocationOptional(name);
+        if (loc >= 0) glUniform4f(loc, x, y, z, w);
+    }
+
     // ═══════════════════════════════════════════════
     // 访问器
     // ═══════════════════════════════════════════════

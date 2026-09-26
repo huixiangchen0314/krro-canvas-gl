@@ -32,10 +32,10 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
         }
 
         int layer = slot.getLayer();
-        int col   = slot.getCol();
-        int row   = slot.getRow();
+        int dataColumn   = slot.getDataColumn();
+        int dataRow   = slot.getDataRow();
 
-        if (atlas.isOccupiedAt(layer, col, row)) {
+        if (atlas.isOccupiedAt(layer, dataColumn, dataRow)) {
             return false;
         }
 

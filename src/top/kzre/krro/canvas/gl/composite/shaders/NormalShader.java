@@ -94,36 +94,23 @@ public final class NormalShader extends AbstractShader {
         GLProgram p = getProgram();
 
         int tileSize = layout.getTileSize();
-        float tileScale = (float) 1 / layout.getTilesPerEdge();
+        int tilesPerEdge = layout.getTilesPerEdge();
+        float tileScale = 1.0f / tilesPerEdge;
 
         // ── 几何参数 ──
-        p.setVec2("uViewport", viewWidth, viewHeight);
-        p.setFloat("uTileSize", tileSize);
-        p.setFloat("uTileScale", tileScale);
+        p.setVec2IfPresent("uViewport", viewWidth, viewHeight);
+        p.setFloatIfPresent("uTileSize", tileSize);
+        p.setFloatIfPresent("uTileScale", tileScale);
 
         // ── 本 group 的三张 buffer 表 ──
-        p.setInt("uTileTable",  group.getTileTableUnit());
-        p.setInt("uLayerTable", group.getLayerTableUnit());
-        p.setInt("uIndexTable", group.getIndexTableUnit());
+        p.setIntIfPresent("uTileTable",  group.getTileTableUnit());
+        p.setIntIfPresent("uLayerTable", group.getLayerTableUnit());
+        p.setIntIfPresent("uIndexTable", group.getIndexTableUnit());
 
         // ── 纹理采样器 —— 固定指向 unit 0..3 ──
-        p.setInt("uTexture0", 0);
-        p.setInt("uTexture1", 1);
-        p.setInt("uTexture2", 2);
-        p.setInt("uTexture3", 3);
-
-        System.out.println("[NormalShader.configure]"
-                + " program=" + System.identityHashCode(p)
-
-                + " tileScale=" + tileScale
-                + " viewport=" + viewWidth + "x" + viewHeight
-                + " group={"
-                + " tileTableUnit=" + group.getTileTableUnit()
-                + " layerTableUnit=" + group.getLayerTableUnit()
-                + " indexTableUnit=" + group.getIndexTableUnit()
-                + " tileEntryCount=" + group.getTileEntryCount()
-                + " layerEntryCount=" + group.getLayerEntryCount()
-                + " indexCount=" + group.getIndexCount()
-                + " }");
+        p.setIntIfPresent("uTexture0", 0);
+        p.setIntIfPresent("uTexture1", 1);
+        p.setIntIfPresent("uTexture2", 2);
+        p.setIntIfPresent("uTexture3", 3);
     }
 }

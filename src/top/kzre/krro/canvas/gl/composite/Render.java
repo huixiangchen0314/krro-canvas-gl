@@ -68,11 +68,6 @@ public final class Render {
             GLCompositeContext ctx,
             Set<Long> dirtyTiles) {
 
-//        return CompletableFuture.completedFuture(
-//                new TiledCanvas(ctx.getTileSize(), RGB.rgba(1, 0, 0, 1))
-//                        .ensureTiles(dirtyTiles)
-//        );
-
         FixedSizeFrameBufferPool fboPool  = ctx.getViewFrameBufferPool();
         SerialExecutor glExecutor = ctx.getGlExecutor();
         int tileSize = ctx.getTileSize();
@@ -83,7 +78,6 @@ public final class Render {
 
                     CompositeRequest request = CompositePlanner.plan(
                             layers, ctx,
-                            CompositeGLProgramManager.getCache(),
                             fboA, fboB, dirtyTiles);
 
                     if (request == null) {
@@ -93,7 +87,7 @@ public final class Render {
                         return CompletableFuture.completedFuture(emptyCanvas);
                     }
 
-                    return glExecutor.submit(new MockClearBlueCompositeTask(fboA))
+                    return glExecutor.submit(new CompositeTask(request))
                             .thenCompose(resultFbo ->{
                                 GLFramebuffer other = (resultFbo == fboA) ? fboB : fboA;
                                 fboPool.release(other);
