@@ -34,7 +34,7 @@ public final class TileBufferBundle {
         this.bindables = bindables.clone();
     }
 
-    public Shader        getShader()    { return shader; }
+    public Shader getShader()    { return shader; }
 
     /**
      * 需要绑定到纹理单元的资源。下标即单元号，null 位置跳过。

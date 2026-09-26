@@ -53,7 +53,7 @@ public final class AtlasTileFactory implements TileFactory {
                     "atlas is full, cannot allocate tile ("
                             + tx + ", " + ty + ")");
         }
-        GLAtlas.GLTileData gl = atlas.allocate(data);
+        GLAtlas.GLTileDataImpl gl = atlas.allocate(data);
         return new DefaultTile(tx, ty, gl);
     }
 }

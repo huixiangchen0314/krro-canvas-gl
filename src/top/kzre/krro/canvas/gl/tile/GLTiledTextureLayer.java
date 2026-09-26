@@ -62,6 +62,7 @@ public final class GLTiledTextureLayer extends AbstractGLTiledTexture {
 
     @Override
     protected void onAllViewsReleased() {
+        System.out.println("GLTiledTextureLayer#onAllViewsReleased");
         onReleased.run();
     }
 

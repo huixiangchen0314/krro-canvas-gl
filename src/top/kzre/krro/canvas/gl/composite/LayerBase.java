@@ -3,17 +3,7 @@ package top.kzre.krro.canvas.gl.composite;
 import top.kzre.colorutils.blend.Blends;
 import top.kzre.krro.util.tile.TiledCanvas;
 
-/**
- * {@link ILayer} 的默认实现。不可变值对象。
- *
- * <p><b>用途</b>：Java 侧构造简单图层的便捷入口。Clojure 侧通常
- * 有自己的 record 实现 {@code ILayer}，不需要本类。本类是给纯 Java
- * 调用方和测试用的。
- *
- * <p><b>线程契约</b>：纯数据，任意线程可构造和读取。
- */
-public final class DefaultLayer implements ILayer {
-
+public abstract class LayerBase implements ILayer{
     private final Object      id;
     private final TiledCanvas canvas;
     private final float[]     transform;
@@ -29,12 +19,12 @@ public final class DefaultLayer implements ILayer {
      * @param opacity   透明度，范围 {@code [0, 1]}
      * @param blendMode 混合模式标识，取值来自 {@link Blends}
      */
-    public DefaultLayer(Object id,
-                        TiledCanvas canvas,
-                        float[] transform,
-                        boolean visible,
-                        float opacity,
-                        String blendMode) {
+    public LayerBase(Object id,
+                     TiledCanvas canvas,
+                     float[] transform,
+                     boolean visible,
+                     float opacity,
+                     String blendMode) {
         if (transform == null || transform.length < 6) {
             throw new IllegalArgumentException(
                     "transform must be a 6-element affine matrix");

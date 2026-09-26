@@ -1,6 +1,6 @@
 package top.kzre.krro.canvas.gl.tile;
 
-import top.kzre.krro.canvas.gl.tile.GLAtlas.GLTileData;
+import top.kzre.krro.canvas.gl.tile.GLAtlas.GLTileDataImpl;
 import top.kzre.krro.util.tile.*;
 
 /**
@@ -8,7 +8,7 @@ import top.kzre.krro.util.tile.*;
  *
  * <p>{@link TiledCanvas} 通过本工厂创建 tile 时，根据 {@link AtlasSlot}
  * 的 {@code unit} 选中对应的 atlas，把 {@link TileData} 换入指定槽位，
- * 并用 {@link DefaultTile} 承载换入后的 {@link GLTileData}。
+ * 并用 {@link DefaultTile} 承载换入后的 {@link GLTileDataImpl}。
  *
  * <p><b>为什么在 composite 包</b>：本工厂依赖 {@link AtlasSlot}——那是
  * 规划阶段的产物，属于 composite 层。放在 tile 包会让 tile 包反向
@@ -59,13 +59,13 @@ public final class SlottedTileFactory implements TileFactory {
     @Override
     public Tile create(int tx, int ty, TileData data) {
         // 已经是 GPU 形态：直接承载，不重复换入
-        if (data instanceof GLTileData) {
+        if (data instanceof GLAtlas.GLTileData) {
             return new DefaultTile(tx, ty, data);
         }
 
         AtlasSlot slot  = slotOf.apply(tx, ty);
         GLAtlas  atlas = atlases[slot.getAtlasIndex()];
-        GLTileData gl = atlas.allocateAt(
+        GLTileDataImpl gl = atlas.allocateAt(
                 slot.getLayer(), slot.getCol(), slot.getRow(), data);
         return new DefaultTile(tx, ty, gl);
     }

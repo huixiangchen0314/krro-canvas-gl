@@ -20,7 +20,7 @@ import top.kzre.krro.util.tile.TiledCanvas;
  * <p><b>线程契约</b>：纯数据，任意线程可构造和读取。
  * @see top.kzre.colorutils.blend.Blends
  */
-public interface ILayer {
+public interface ILayer extends AutoCloseable{
 
     /**
      * 图层标识。用于调试、日志、缓存。不参与合成逻辑。
@@ -64,4 +64,5 @@ public interface ILayer {
      * 注册的混合模式。
      */
     String getBlendMode();
+
 }

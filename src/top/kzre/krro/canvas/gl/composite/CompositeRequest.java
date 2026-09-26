@@ -36,14 +36,12 @@ import java.util.List;
 public final class CompositeRequest {
 
     private final AtlasPoolPage page;
-    private final ViewportGrid            viewportGrid;
+    private final ViewportGrid viewportGrid;
     private final List<TileBufferBundle>  bundles;
-    private final GLFramebuffer           fboA;
-    private final GLFramebuffer           fboB;
-
-    private CompositeRequest(AtlasPoolPage page,
-                             ViewportGrid viewportGrid,
-                             List<TileBufferBundle> bundles,
+    private final GLFramebuffer fboA;
+    private final GLFramebuffer fboB;
+    private final GLCompositeContext context;
+    private CompositeRequest(GLCompositeContext context, ViewportGrid viewportGrid, List<TileBufferBundle> bundles, AtlasPoolPage page,
                              GLFramebuffer fboA,
                              GLFramebuffer fboB) {
         this.page         = page;
@@ -51,11 +49,13 @@ public final class CompositeRequest {
         this.bundles      = bundles;
         this.fboA         = fboA;
         this.fboB         = fboB;
+        this.context = context;
     }
 
-    public static CompositeRequest of(AtlasPoolPage page,
+    public static CompositeRequest of(GLCompositeContext context,
                                       ViewportGrid viewportGrid,
                                       List<TileBufferBundle> bundles,
+                                      AtlasPoolPage page,
                                       GLFramebuffer fboA,
                                       GLFramebuffer fboB) {
         if (page == null)         throw new IllegalArgumentException("page must not be null");
@@ -71,9 +71,10 @@ public final class CompositeRequest {
         if (fboA == fboB)         throw new IllegalArgumentException("fboA and fboB must differ");
 
         return new CompositeRequest(
-                page,
+                context,
                 viewportGrid,
                 Collections.unmodifiableList(new ArrayList<>(bundles)),
+                page,
                 fboA, fboB);
     }
 
@@ -90,5 +91,9 @@ public final class CompositeRequest {
     public String toString() {
         return "CompositeRequest{grid=" + viewportGrid
                 + ", bundles=" + bundles.size() + "}";
+    }
+
+    public GLCompositeContext getContext() {
+        return context;
     }
 }

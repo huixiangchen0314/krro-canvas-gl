@@ -54,10 +54,23 @@ public class GLCompositeContext implements AutoCloseable {
     private final SerialExecutor glExecutor;
 
     private final GLAtlasPool atlasPool;
-    private final TiledCanvas emptyCanvas;
-    private volatile FixedSizeFrameBufferPool viewFrameBufferPool;
 
-    private final int             tileSize;
+    /**
+     * 本上下文共享的 quad。GL 线程首次 {@link #getQuad()} 时创建，
+     * {@link #close()} 时释放。
+     *
+     * <p>volatile 保证 close 时的可见性——创建只发生在 GL 线程，
+     * 读可能发生在任意线程（但 getQuad 仍在 GL 线程调用）。
+     */
+    private volatile GLQuad quad;
+
+    private volatile FixedSizeFrameBufferPool viewFrameBufferPool;
+    /**
+     * 空画布模板，用于产生空画布
+     */
+    private final TiledCanvas emptyCanvasTpl;
+
+    private final int tileSize;
     private final int viewFboPoolCapacity;
     private final PixelFormat pixelFormat;
     private final NoGLTexturePool noTexPool;
@@ -71,7 +84,6 @@ public class GLCompositeContext implements AutoCloseable {
     // ═══════════════════════════════════════════════
     // 构造
     // ═══════════════════════════════════════════════
-
 
     public GLCompositeContext(SerialExecutor glExecutor,
                               GLAtlasPool atlasPool,
@@ -103,8 +115,8 @@ public class GLCompositeContext implements AutoCloseable {
 
         int channels = PixelCodec.channels(pixelFormat);
         float[] defaultPixels = new float[channels];
-        this.emptyCanvas = new TiledCanvas(tileSize, defaultPixels);
-        emptyCanvas.setReadonly(true);
+        this.emptyCanvasTpl = new TiledCanvas(tileSize, defaultPixels);
+        emptyCanvasTpl.setReadonly(true);
     }
 
 
@@ -135,6 +147,11 @@ public class GLCompositeContext implements AutoCloseable {
         return viewWidth != alignedW || viewHeight != alignedH;
     }
 
+
+    // ═══════════════════════════════════════════════
+    // GL 线程内部接口
+    // ═══════════════════════════════════════════════
+
     /**
      * 调整视口尺寸。尺寸变化时重建 FBO 池。
      *
@@ -142,10 +159,7 @@ public class GLCompositeContext implements AutoCloseable {
      *
      * @throws IllegalStateException    非 GL 线程调用，或上下文已关闭
      * @throws IllegalArgumentException width / height ≤ 0
-     */    // ═══════════════════════════════════════════════
-    // GL 线程内部接口
-    // ═══════════════════════════════════════════════
-
+     */
     public void adjustViewSize(int width, int height) {
         checkGlThread();
         if (closed.get()) {
@@ -185,6 +199,32 @@ public class GLCompositeContext implements AutoCloseable {
             try { texturePool.close(); } catch (Throwable ignored) { }
             throw t;
         }
+    }
+
+    /**
+     * 获取本上下文的共享 {@link GLQuad}。首次调用时创建并绑定位置
+     * attribute。
+     *
+     * <p><b>线程契约</b>：必须在 GL 线程调用——涉及 GL 创建与 VAO 配置。
+     *
+     * <p><b>生命周期</b>：quad 属于本上下文，{@link #close()} 时释放。
+     * 一个 context 一个 quad——多个 context 各有自己的 quad，互不共享，
+     * 避免跨 context 使用 GL 对象。
+     *
+     * @throws IllegalStateException 非 GL 线程调用，或上下文已关闭
+     */
+    public GLQuad getQuad() {
+        checkGlThread();
+        if (closed.get()) {
+            throw new IllegalStateException("context is closed");
+        }
+        GLQuad q = quad;
+        if (q == null) {
+            q = GLQuad.create();
+            q.bindPositionAttribute(ShaderConstants.ATTRIBUTE_POSITION_QUAD);
+            quad = q;
+        }
+        return q;
     }
 
     // ═══════════════════════════════════════════════
@@ -251,6 +291,12 @@ public class GLCompositeContext implements AutoCloseable {
             viewFrameBufferPool.close();
             viewFrameBufferPool = null;
         }
+        // quad 清理
+        GLQuad q = quad;
+        if (q != null) {
+            q.release();
+            quad = null;
+        }
         atlasPool.close();
         viewWidth  = 0;
         viewHeight = 0;
@@ -270,7 +316,15 @@ public class GLCompositeContext implements AutoCloseable {
 
     public PixelFormat getPixelFormat() { return pixelFormat; }
 
-    public TiledCanvas getEmptyCanvas() { return emptyCanvas; }
+    public TiledCanvas newCanvas()
+    {
+        return emptyCanvasTpl.copy();
+    }
+
+    public TiledCanvas newReadonlyCanvas()
+    {
+        return emptyCanvasTpl.copy().setReadonly(true);
+    }
 
 
     private static int alignUp(int value, int multiple) {

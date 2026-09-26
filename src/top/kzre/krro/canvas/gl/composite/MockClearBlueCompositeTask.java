@@ -13,25 +13,24 @@ import static org.lwjgl.opengl.GL11.*;
  */
 public class MockClearBlueCompositeTask implements Callable<GLFramebuffer> {
 
-    private final CompositeRequest request;
+    private final GLFramebuffer fbo;
 
-    public MockClearBlueCompositeTask(CompositeRequest request) {
-        if (request == null) throw new IllegalArgumentException("request must not be null");
-        this.request = request;
+    public MockClearBlueCompositeTask(GLFramebuffer fbo) {
+       this.fbo = fbo;
     }
 
     @Override
     public GLFramebuffer call() throws Exception {
-        GLFramebuffer fboA = request.getFboA();
 
-        fboA.bind();
+        fbo.bind();
         try {
-            glClearColor(0f, 0f, 1f, 1f);   // 蓝色，不透明
+            // 代尔夫特蓝
+            glClearColor(31.0f / 255.0f, 48.0f / 255.0f, 94.0f / 255.0f, 0.8f);
             glClear(GL_COLOR_BUFFER_BIT);
         } finally {
             GLFramebuffer.unbind();
         }
 
-        return fboA;
+        return fbo;
     }
 }

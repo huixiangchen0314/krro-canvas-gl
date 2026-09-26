@@ -1,60 +1,43 @@
 package top.kzre.krro.canvas.gl.resource;
 
-import java.nio.FloatBuffer;
+import java.nio.ByteBuffer;
+import java.util.List;
 
+import static org.lwjgl.opengl.GL15.*;
+import static org.lwjgl.opengl.GL20.glEnableVertexAttribArray;
+import static org.lwjgl.opengl.GL20.glVertexAttribPointer;
 import static org.lwjgl.opengl.GL30.*;
 import static org.lwjgl.opengl.GL33.glVertexAttribDivisor;
 
 /**
- * 实例数据缓冲：为实例化渲染提供 per-instance attribute。
+ * 实例数据缓冲。字节级 VBO——GL 的本质。
  *
- * <p>用途：给每个 tile（实例）一组 descriptor，由顶点着色器按实例读取。
- * 数据布局为 AoS——每个实例的字段连续存放：
- * <pre>
- *   [f0 f1 f2 f3 f4][f0 f1 f2 f3 f4][...]
- *    ←── 实例 0 ──→   ←── 实例 1 ──→
- * </pre>
- * 每个实例占 {@code stride} 个 float。
+ * <p><b>字节级语义</b>：{@code strideBytes} 是每实例的字节数；
+ * {@code upload} 接受 {@link ByteBuffer}；{@code bindTo} 时调用方
+ * 逐 attribute 给类型、分量、偏移。混合类型（float + int + 打包
+ * 整数）由调用方描述，缓冲不做假设。
  *
- * <h2>Attribute 拆分</h2>
- * 内部按每 4 个 float 拆成一个 {@code vec4} attribute。例如
- * {@code stride = 8} 拆成两个 attribute：
- * <pre>
- *   location = baseLocation      → vec4（实例字段 0-3）
- *   location = baseLocation + 1  → vec4（实例字段 4-7）
- * </pre>
- * 如果 {@code stride} 不是 4 的倍数，最后一个 attribute 可能读取
- * 超出实例边界的字节——由调用方保证 buffer 尾部有足够填充。
+ * <p><b>不直接面向业务调用方</b>：日常使用走 {@link FloatInstanceBuffer}
+ * 等特化视图。本类只服务视图层和需要精确控制字节布局的场景。
  *
- * <h2>Attribute divisor</h2>
- * 所有 attribute 设 {@code divisor = 1}——每个实例前进一次。
- * 与 {@link GLQuad} 的顶点 attribute（{@code divisor = 0}）配合，
- * 实现「每个实例画一个四边形」。
+ * <p><b>关闭语义</b>：{@link #close()} <b>不可重入</b>——重复调用抛
+ * 异常。GL 资源的关闭是决定性动作，重复关闭意味着调用方逻辑错误
+ * （比如两处代码都在关），静默幂等会掩盖 bug。跟池的 {@code close}
+ * 语义一致。
  *
- * <h2>动态扩容</h2>
- * {@link #upload} 在数据超出当前容量时自动调用 {@code glBufferData}
- * 重新分配。首次创建时可指定初始容量避免频繁扩容。
- *
- * <h2>线程契约</h2>
- * <b>所有方法必须在 GL 线程（current context）上调用。</b>
- *
- * <h2>生命周期</h2>
- * 由 {@link #create} 创建，由 {@link #release()} 释放。不实现
- * {@link AutoCloseable}——释放必须在 GL 线程上执行。
+ * <p><b>线程契约</b>：所有方法必须在 GL 线程调用。
  */
-public final class GLInstanceBuffer {
+public final class GLInstanceBuffer implements AutoCloseable {
 
     private final int vbo;
-    private final int stride;
-    private final int baseLocation;
-    private int capacityFloats;
-    private boolean released = false;
+    private final int strideBytes;
+    private final int capacityInstances;
+    private volatile boolean closed = false;
 
-    private GLInstanceBuffer(int vbo, int stride, int baseLocation, int capacityFloats) {
+    private GLInstanceBuffer(int vbo, int strideBytes, int capacityInstances) {
         this.vbo = vbo;
-        this.stride = stride;
-        this.baseLocation = baseLocation;
-        this.capacityFloats = capacityFloats;
+        this.strideBytes = strideBytes;
+        this.capacityInstances = capacityInstances;
     }
 
     // ═══════════════════════════════════════════════
@@ -62,60 +45,106 @@ public final class GLInstanceBuffer {
     // ═══════════════════════════════════════════════
 
     /**
-     * 创建实例缓冲并绑定到 VAO 的 attribute。
-     *
-     * @param vao           目标 VAO（来自 {@link GLQuad#getVao()}）
-     * @param stride        每实例 float 数
-     * @param baseLocation  起始 attribute location（{@link GLQuad}
-     *                      占用 location 0，通常从 1 开始）
-     * @param initialFloats 初始容量（float 数），自动向上取整到
-     *                      {@code stride} 的倍数
-     * @throws IllegalArgumentException 参数非法
+     * @param strideBytes      每实例字节数，至少 1
+     * @param initialInstances 初始容量（实例数），至少 1
      */
-    public static GLInstanceBuffer create(
-            int vao, int stride, int baseLocation, int initialFloats) {
-        if (stride < 1) {
-            throw new IllegalArgumentException("stride must be >= 1: " + stride);
+    public static GLInstanceBuffer create(int strideBytes, int initialInstances) {
+        if (strideBytes < 1) {
+            throw new IllegalArgumentException("strideBytes must be >= 1: " + strideBytes);
         }
-        if (baseLocation < 0) {
-            throw new IllegalArgumentException(
-                    "baseLocation must be >= 0: " + baseLocation);
-        }
-        if (initialFloats < stride) {
-            initialFloats = stride;
-        }
-        // 向上取整到 stride 的倍数
-        initialFloats = ((initialFloats + stride - 1) / stride) * stride;
+        if (initialInstances < 1) initialInstances = 1;
 
         int vbo = glGenBuffers();
         try {
-            glBindVertexArray(vao);
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
             try {
-                glBindBuffer(GL_ARRAY_BUFFER, vbo);
                 glBufferData(GL_ARRAY_BUFFER,
-                        (long) initialFloats * Float.BYTES,
+                        (long) initialInstances * strideBytes,
                         GL_DYNAMIC_DRAW);
-
-                int floatsPerAttr = 4;
-                int attrCount = (stride + floatsPerAttr - 1) / floatsPerAttr;
-                for (int i = 0; i < attrCount; i++) {
-                    int loc = baseLocation + i;
-                    glEnableVertexAttribArray(loc);
-                    glVertexAttribPointer(loc, floatsPerAttr, GL_FLOAT, false,
-                            stride * Float.BYTES,
-                            (long) i * floatsPerAttr * Float.BYTES);
-                    glVertexAttribDivisor(loc, 1);
-                }
             } finally {
-                glBindVertexArray(0);
                 glBindBuffer(GL_ARRAY_BUFFER, 0);
             }
         } catch (Throwable t) {
             glDeleteBuffers(vbo);
             throw t;
         }
+        return new GLInstanceBuffer(vbo, strideBytes, initialInstances);
+    }
 
-        return new GLInstanceBuffer(vbo, stride, baseLocation, initialFloats);
+    // ═══════════════════════════════════════════════
+    // Attribute 描述
+    // ═══════════════════════════════════════════════
+
+    /**
+     * 单个 attribute 的描述。
+     */
+    public static final class Attribute {
+        public final int     location;
+        public final int     components;
+        public final int     glType;
+        public final int     offsetBytes;
+        public final boolean normalized;
+        public final int     divisor;
+
+        /**
+         * @param location    attribute location
+         * @param components  分量数 1~4
+         * @param glType      GL_FLOAT / GL_INT / GL_UNSIGNED_BYTE / ...
+         * @param offsetBytes 相对实例起始的字节偏移
+         * @param normalized  是否归一化（整数转 float 时用）
+         * @param divisor     通常为 1（每实例一次）
+         */
+        public Attribute(int location, int components, int glType,
+                         int offsetBytes, boolean normalized, int divisor) {
+            if (location < 0)      throw new IllegalArgumentException("location < 0");
+            if (components < 1 || components > 4)
+                throw new IllegalArgumentException("components must be 1~4");
+            if (offsetBytes < 0)   throw new IllegalArgumentException("offsetBytes < 0");
+            if (divisor < 0)       throw new IllegalArgumentException("divisor < 0");
+            this.location    = location;
+            this.components  = components;
+            this.glType      = glType;
+            this.offsetBytes = offsetBytes;
+            this.normalized  = normalized;
+            this.divisor     = divisor;
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    // VAO 绑定
+    // ═══════════════════════════════════════════════
+
+    /**
+     * 按 {@code attrs} 把本 buffer 绑到目标 VAO。
+     *
+     * <p>绑定后 VAO 记住映射——上传新数据不需要重绑。
+     *
+     * @param vao   目标 VAO
+     * @param attrs attribute 描述列表，不能为空
+     * @throws IllegalStateException 本 buffer 已关闭
+     */
+    public void bindTo(int vao, List<Attribute> attrs) {
+        checkAlive();
+        if (attrs == null || attrs.isEmpty()) {
+            throw new IllegalArgumentException("attrs must not be empty");
+        }
+
+        glBindVertexArray(vao);
+        try {
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
+            try {
+                for (Attribute a : attrs) {
+                    glEnableVertexAttribArray(a.location);
+                    glVertexAttribPointer(a.location, a.components, a.glType,
+                            a.normalized, strideBytes, (long) a.offsetBytes);
+                    glVertexAttribDivisor(a.location, a.divisor);
+                }
+            } finally {
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+            }
+        } finally {
+            glBindVertexArray(0);
+        }
     }
 
     // ═══════════════════════════════════════════════
@@ -123,80 +152,74 @@ public final class GLInstanceBuffer {
     // ═══════════════════════════════════════════════
 
     /**
-     * 上传实例数据。
+     * 上传实例数据。超出容量抛异常——池化设计下尺寸固定。
      *
-     * <p>buffer 中前 {@code count * stride} 个 float 被上传。超出当前
-     * 容量时自动扩容。
+     * <p><b>不重新绑定 VAO</b>——VBO 句柄不变，VAO 里记录的映射依然有效。
      *
-     * @param data  数据源，position 到 limit 之间至少有
-     *              {@code count * stride} 个 float
+     * @param data  position 到 limit 之间至少 {@code count * strideBytes} 字节
      * @param count 实例数
-     * @throws IllegalArgumentException count 非法或 buffer 空间不足
+     * @throws IllegalArgumentException count 超容量或 data 空间不足
+     * @throws IllegalStateException    本 buffer 已关闭
      */
-    public void upload(FloatBuffer data, int count) {
+    public void upload(ByteBuffer data, int count) {
         checkAlive();
         if (count < 0) {
             throw new IllegalArgumentException("count must be >= 0: " + count);
         }
-        int floats = count * stride;
-        if (data.remaining() < floats) {
+        if (count > capacityInstances) {
             throw new IllegalArgumentException(
-                    "data has " + data.remaining() + " floats but need " + floats);
+                    "count " + count + " exceeds capacity " + capacityInstances);
+        }
+        int bytes = count * strideBytes;
+        if (data.remaining() < bytes) {
+            throw new IllegalArgumentException(
+                    "data has " + data.remaining() + " bytes but need " + bytes);
         }
 
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
         try {
-            if (floats > capacityFloats) {
-                glBufferData(GL_ARRAY_BUFFER,
-                        (long) floats * Float.BYTES,
-                        GL_DYNAMIC_DRAW);
-                capacityFloats = floats;
+            if (bytes > 0) {
+                ByteBuffer slice = data.slice();
+                slice.limit(bytes);
+                glBufferSubData(GL_ARRAY_BUFFER, 0L, slice);
             }
-            FloatBuffer slice = data.slice();
-            slice.limit(floats);
-            glBufferSubData(GL_ARRAY_BUFFER, 0L, slice);
         } finally {
             glBindBuffer(GL_ARRAY_BUFFER, 0);
         }
     }
 
     // ═══════════════════════════════════════════════
-    // 释放
+    // 关闭
     // ═══════════════════════════════════════════════
 
     /**
-     * 释放 VBO。必须在 GL 线程上调用。幂等。
+     * 关闭，释放 VBO。必须在 GL 线程调用。
      *
-     * <p>VAO 中对应 attribute 的配置不会自动清除——如果 VAO 还被
-     * 使用，后续 draw 可能读到无效数据。通常 VAO 和 instance buffer
-     * 一起释放。
+     * <p><b>不可重入</b>——重复调用抛 {@link IllegalStateException}。
+     * 这是有意的：静默幂等会掩盖调用方的逻辑错误（比如两处代码都
+     * 在关同一个 buffer）。
+     *
+     * @throws IllegalStateException 已关闭
      */
-    public void release() {
-        if (released) return;
+    @Override
+    public void close() {
+        if (closed) {
+            throw new IllegalStateException("GLInstanceBuffer already closed");
+        }
         glDeleteBuffers(vbo);
-        released = true;
+        closed = true;
     }
 
     // ═══════════════════════════════════════════════
     // 访问器
     // ═══════════════════════════════════════════════
 
-    /** VBO 句柄。 */
-    public int getVbo() { return vbo; }
-
-    /** 每实例的 float 数。 */
-    public int getStride() { return stride; }
-
-    /** 起始 attribute location。 */
-    public int getBaseLocation() { return baseLocation; }
-
-    /** 当前容量（float 数）。 */
-    public int getCapacityFloats() { return capacityFloats; }
-
-    /** 是否已释放。 */
-    public boolean isReleased() { return released; }
+    public int  getVbo()               { return vbo; }
+    public int  getStrideBytes()       { return strideBytes; }
+    public int  getCapacityInstances() { return capacityInstances; }
+    public boolean isClosed()          { return closed; }
 
     private void checkAlive() {
-        if (released) throw new IllegalStateException("GLInstanceBuffer released");
+        if (closed) throw new IllegalStateException("GLInstanceBuffer closed");
     }
 }

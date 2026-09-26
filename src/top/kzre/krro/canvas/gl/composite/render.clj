@@ -1,45 +1,36 @@
 (ns top.kzre.krro.canvas.gl.composite.render
   (:require
+    [taoensso.timbre :as log]
     [top.kzre.krro.canvas.core.layer.render.batch :as batch]
+    [top.kzre.krro.canvas.gl.composite.layer :as layer]
+    [top.kzre.krro.core.util.tracker :as tracker]
     [top.kzre.krro.canvas.gl.composite.rasterize :as rasterize]
-    [top.kzre.krro.core.util.promise :as promise]
-    [taoensso.timbre :as log])
+    [top.kzre.krro.core.util.promise :as promise])
   (:import
-    (top.kzre.colorutils.blend Blends)
-    (top.kzre.krro.canvas.gl.composite DefaultLayer GLCompositeContext Render)
-    (top.kzre.krro.util.math KMath)
+    (top.kzre.krro.canvas.gl.composite GLCompositeContext Render)
     (top.kzre.krro.util.tile TiledCanvas)))
 
-(defn- canvas->layer
-  [^TiledCanvas canvas]
-  (DefaultLayer.
-    (keyword "background")
-    canvas
-    (KMath/mat2dIdentity)
-    true
-    1.0
-    Blends/NORMAL))
 
 (defmethod batch/render-batch :gl
-  [_ ^TiledCanvas backdrop-canvas layers
+  [_ ^TiledCanvas backdrop-canvas layer-stack
    {:keys [dirty-tiles tile-size gl-composite-context
            view-width view-height]
     :as   opts}]
   {:pre [(instance? GLCompositeContext gl-composite-context)
          (= tile-size (.getTileSize ^GLCompositeContext gl-composite-context))]}
   (let [^GLCompositeContext ctx gl-composite-context]
-    (if (or (nil? layers)
-            (empty? layers)
+    (if (or (nil? layer-stack)
+            (empty? layer-stack)
             (empty? dirty-tiles))
       (promise/resolved backdrop-canvas)
-      (-> (rasterize/rasterize-layers layers opts)
+      (-> (rasterize/rasterize-layers layer-stack opts)
           (promise/then
-            (fn [rasterized-layers]
+            (fn [{:keys [layers tracker]}]
               (-> (try
                     (promise/from-completable-future
                       (Render/render
-                        (into [(canvas->layer backdrop-canvas)]
-                              rasterized-layers)
+                        (into [(layer/wrap-canvas-as-layer backdrop-canvas)]
+                              layers)
                         ctx
                         (int view-width) (int view-height)
                         dirty-tiles))
@@ -51,19 +42,15 @@
                         (if e
                           (throw e)
                           (do
-                            (when result-canvas
-                              (.mergeCanvas backdrop-canvas result-canvas))
-                            backdrop-canvas))
+                            (.keepTiles result-canvas dirty-tiles)
+                            (.mergeCanvas backdrop-canvas result-canvas)))
                         (finally
-                          (when result-canvas
-                            (try
-                              (.close result-canvas)
-                              (catch Throwable t
-                                (log/error t))))
-                          (doseq [l rasterized-layers
-                                  :let [^TiledCanvas canvas (:canvas l)]
-                                  :when canvas]
-                            (try
-                              (.close canvas)
-                              (catch Throwable t
-                                (log/error t)))))))))))))))
+                          (try
+                            (.close result-canvas)
+                            (catch Throwable t
+                              (log/error t)))
+                          (try
+                            (tracker/close! tracker)
+                            (catch Throwable t
+                              (log/error t)))
+                          )))))))))))

@@ -26,7 +26,7 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
     @Override
     public boolean allocateAt(AtlasSlot slot, TileRef ref) {
         int idx  = slot.getAtlasIndex();
-        GLAtlas atlas = atlases[idx ];
+        GLAtlas atlas = atlases[idx];
         if (atlas == null) {
             throw new IllegalArgumentException("No atlas with idx  " + idx );
         }
@@ -42,20 +42,6 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
         TileFactory factory = new SlottedTileFactory(atlases, (tx, ty) -> slot);
         pageIn(ref, factory);
         return true;
-    }
-
-    // ═══════════════════════════════════════════════
-    // 内部
-    // ═══════════════════════════════════════════════
-
-    /** 找第一个非满的 atlas。全部满或为空时返回 null。 */
-    private GLAtlas findNonFullAtlas() {
-        for (GLAtlas atlas : atlases) {
-            if (atlas != null && !atlas.isFull()) {
-                return atlas;
-            }
-        }
-        return null;
     }
 
     /**

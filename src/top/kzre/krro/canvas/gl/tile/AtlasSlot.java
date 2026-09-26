@@ -28,7 +28,6 @@ package top.kzre.krro.canvas.gl.tile;
  * <p><b>线程契约</b>：纯数据，无 GL 副作用，任意线程可构造和读取。
  */
 public final class AtlasSlot {
-
     /** atlas 在 AtlasPoolPage 中的下标。不是 GL 纹理单元。 */
     private final int atlasIndex;
     /** texture array 层索引。 */

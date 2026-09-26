@@ -7,9 +7,8 @@ import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.resource.PixelCodec;
 import top.kzre.krro.canvas.gl.resource.PixelFormat;
 import top.kzre.krro.core.util.AsyncExecutor;
-import top.kzre.krro.util.tile.AbstractTileData;
-import top.kzre.krro.util.tile.TileData;
-import top.kzre.krro.util.tile.TiledCanvas;
+import top.kzre.krro.core.util.DEBUG;
+import top.kzre.krro.util.tile.*;
 
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
@@ -107,12 +106,11 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
             int layer = layerOffset + i;
             for (int sy = 0; sy < tilesPerColumn; sy++) {
                 for (int sx = 0; sx < tilesPerRow; sx++) {
-                    int tx = sx;
                     int ty = layer * tilesPerColumn + sy;
                     activeTiles.incrementAndGet();
-                    GLTextureTileDataImpl view =
-                            new GLTextureTileDataImpl(this, layer, sx, sy);
-                    canvas.replaceTile(tx, ty, view);
+                    int finalSx = sx;
+                    int finalSy = sy;
+                    canvas.replaceTile(sx, ty, ()->new GLTextureTileDataImpl(this, layer, finalSx, finalSy));
                 }
             }
         }
@@ -224,6 +222,11 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
 
         @Override
         public CompletableFuture<Void> downloadTo(TiledCanvas target, int tx, int ty) {
+            int refCount = refCount();
+            if (refCount <= 0) {
+                throw new IllegalStateException("GLTextureTileDataImpl already released, refCount=" + refCount);
+            }
+            System.out.println("GLTextureTileDataImpl.downloadTo, refCount=" + refCount);
             int ts = owner.tileSize();
             int targetTs = target.getTileSize();
             if (ts != targetTs) {
@@ -269,7 +272,24 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
 
         @Override
         protected void onRelease() {
+            System.out.println("GLTextureTileDataImpl.onRelease, refCount="+ refCount()+" \n"
+                            + DEBUG.stack());
             owner.decrementActiveTile();
+        }
+
+        @Override
+        public int acquire() {
+            System.out.println("GLTextureTileDataImpl.acquire, refCount="+ refCount()+" \n"
+            + DEBUG.stack());
+
+            return super.acquire();
+        }
+
+        @Override
+        public int release() {
+            System.out.println("GLTextureTileDataImpl.release, refCount="+ refCount()+" \n"
+                    + DEBUG.stack());
+            return super.release();
         }
 
         @Override

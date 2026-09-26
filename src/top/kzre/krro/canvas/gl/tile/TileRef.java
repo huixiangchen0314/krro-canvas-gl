@@ -37,7 +37,7 @@ public final class TileRef {
     /**
      * 把本引用指向的瓦片从 GPU 形态换回 CPU 形态。
      *
-     * <p>内部调 {@link GLAtlas.GLTileData#pageOut(Tile)}：
+     * <p>内部调 {@link GLAtlas.GLTileDataImpl#pageOut(Tile)}：
      * <ul>
      *   <li>tile 当前持有 {@code GLTileData} → 引用计数不变，
      *       tile 换成持有 peer，atlas 槽位显式释放</li>
@@ -47,7 +47,7 @@ public final class TileRef {
      * <p><b>线程契约</b>：必须在 GL 线程上调用。
      */
     public void pageOut(){
-        GLAtlas.GLTileData.pageOut(tile);
+        GLAtlas.GLTileDataImpl.pageOut(tile);
     }
 
     @Override

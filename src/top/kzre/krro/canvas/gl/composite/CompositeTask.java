@@ -2,6 +2,7 @@ package top.kzre.krro.canvas.gl.composite;
 
 import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.UploadableTile;
+
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.resource.GLQuad;
@@ -58,15 +59,15 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
 
     public CompositeTask(CompositeRequest request) {
         if (request == null) throw new IllegalArgumentException("request must not be null");
-       this.request = request;
+        this.request = request;
     }
 
     @Override
     public GLFramebuffer call() throws Exception {
-        ViewportGrid viewport    = request.getViewportGrid();
-        AtlasPoolPage atlasPage    = request.getPage();
+        ViewportGrid viewport        = request.getViewportGrid();
+        AtlasPoolPage atlasPage      = request.getPage();
         List<TileBufferBundle> bundles = request.getBundles();
-
+        GLCompositeContext context = request.getContext();
         GLFramebuffer[] pool = { request.getFboA(), request.getFboB() };
 
         if (bundles.isEmpty()) {
@@ -79,55 +80,69 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
             }
             return pool[0];
         }
-        GLQuad quad = Globals.getQuad();
+
+        GLQuad quad = context.getQuad();
         List<TileBufferBundle> executed = new ArrayList<>();
 
-        for (int i = 0; i < bundles.size(); i++) {
-            TileBufferBundle bundle = bundles.get(i);
-            GLFramebuffer target = pool[i % 2];
-            Shader shader = bundle.getShader();
+        // 本次调用生成的所有实例 VBO——纯局部状态，退出时统一释放。
+        // 不写入任何外部对象，无跨调用副作用。
+        List<Integer> transientVbos = new ArrayList<>();
 
-            quad.bind();
-            try {
-                // 1. 准备本 bundle 的所有 group
-                List<TileBufferGroup> groups = shader.tiles();
-                for (int gi = 0; gi < groups.size(); gi++) {
-                    prepareGroup(atlasPage,
-                            groups.get(gi),
-                            shader.instanceLocation(gi),
-                            viewport,
-                            executed);
-                }
+        try {
+            for (int i = 0; i < bundles.size(); i++) {
+                TileBufferBundle bundle = bundles.get(i);
+                GLFramebuffer target = pool[i % 2];
+                Shader shader = bundle.getShader();
 
-                // 2. 绑定 bindables
-                GLBindable[] bindables = bundle.getBindables();
-                for (int u = 0; u < bindables.length; u++) {
-                    GLBindable b = bindables[u];
-                    if (b != null) {
-                        b.bind(u);
-                    }
-                }
-
-                // 3. 渲染
-                target.bind();
+                quad.bind();
                 try {
-                    glClearColor(0f, 0f, 0f, 0f);
-                    glClear(GL_COLOR_BUFFER_BIT);
+                    // 1. 准备本 bundle 的所有 group
+                    List<TileBufferGroup> groups = shader.tiles();
+                    for (int gi = 0; gi < groups.size(); gi++) {
+                        prepareGroup(atlasPage,
+                                groups.get(gi),
+                                shader.instanceLocation(gi),
+                                viewport,
+                                executed,
+                                transientVbos);
+                    }
 
-                    shader.bind();
+                    // 2. 绑定 bindables
+                    GLBindable[] bindables = bundle.getBindables();
+                    for (int u = 0; u < bindables.length; u++) {
+                        GLBindable b = bindables[u];
+                        if (b != null) {
+                            b.bind(u);
+                        }
+                    }
+
+                    // 3. 渲染
+                    target.bind();
                     try {
-                        quad.drawInstanced(viewport.getScreenTileCount());
+                        glClearColor(0f, 0f, 0f, 0f);
+                        glClear(GL_COLOR_BUFFER_BIT);
+
+                        shader.bind();
+                        try {
+                            quad.drawInstanced(viewport.getViewTileCount());
+                        } finally {
+                            shader.unbind();
+                        }
                     } finally {
-                        shader.unbind();
+                        GLFramebuffer.unbind();
                     }
                 } finally {
-                    GLFramebuffer.unbind();
+                    GLQuad.unbind();
                 }
-            } finally {
-                GLQuad.unbind();
-            }
 
-            executed.add(bundle);
+                executed.add(bundle);
+            }
+        } finally {
+            // 统一释放本任务创建的临时 VBO——正常返回、异常、
+            // 未完成绘制，任何路径下都清理干净。
+            for (int vbo : transientVbos) {
+                glDeleteBuffers(vbo);
+            }
         }
 
         return pool[(bundles.size() - 1) % 2];
@@ -137,20 +152,31 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                               TileBufferGroup group,
                               int instanceLocation,
                               ViewportGrid grid,
-                              List<TileBufferBundle> executed) {
+                              List<TileBufferBundle> executed,
+                              List<Integer> transientVbos) {
         // 1. 换入瓦片
         for (Map.Entry<AtlasSlot, TileRef> e : group.getTiles().entrySet()) {
             pageIn(page, e.getKey(), e.getValue(), executed);
         }
 
         // 2. 上传 buffer
-        uploadTileTable(group.getTileTableUnit(),
-                group.getTileEntries(),
-                group.getTileEntryCount() * 12);
+        //    瓦片表：每瓦片 2 个 vec4 = 8 个 float
+        uploadFloatTable(group.getTileTableUnit(),
+                group.getTileTable(),
+                group.getTileEntryCount() * 8);
+
+        //    图层表：每图层 2 个 vec4 = 8 个 float
+        uploadFloatTable(group.getLayerTableUnit(),
+                group.getLayerTable(),
+                group.getLayerEntryCount() * 8);
+
+        //    索引表：usamplerBuffer，扁平 uint
         uploadIndexTable(group.getIndexTableUnit(),
                 group.getIndexList(),
                 group.getIndexCount());
-        uploadInstances(group, instanceLocation, grid);
+
+        //    逐实例 attribute —— VBO 句柄登记，由 call() 退出时统一释放
+        transientVbos.add(uploadInstances(group, instanceLocation, grid));
     }
 
     /**
@@ -187,6 +213,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
 
         // ── 2. 尝试换入 ──
         if (page.allocateAt(slot, ref)) {
+            uploadIfNeeded(ref);
             return;
         }
 
@@ -208,7 +235,6 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
         }
         uploadIfNeeded(ref);
     }
-
 
     private void uploadIfNeeded(TileRef ref) {
         UploadableTile uploadable = ref.getTile().queryData(UploadableTile.class);
@@ -239,11 +265,17 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
         return null;
     }
 
-    // ═══════════════════════════════════════════════
-    // buffer 上传
-    // ═══════════════════════════════════════════════
-
-    private void uploadTileTable(int unit, float[] data, int count) {
+    /**
+     * 上传一张 float 类型的 buffer 纹理（用于 {@code samplerBuffer}）。
+     *
+     * <p>shader 侧每次 {@code texelFetch} 读取一个 {@code vec4}，
+     * 因此内部格式必须是 {@code GL_RGBA32F}——一个纹素 4 个 float。
+     *
+     * @param unit  目标纹理单元
+     * @param data  数据
+     * @param count 要上传的 float 个数
+     */
+    private void uploadFloatTable(int unit, float[] data, int count) {
         int buf = glGenBuffers();
         int tex = glGenTextures();
         try {
@@ -258,7 +290,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
             }
 
             glBindTexture(GL_TEXTURE_BUFFER, tex);
-            glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, buf);
+            glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, buf);
 
             glActiveTexture(GL_TEXTURE0 + unit);
             glBindTexture(GL_TEXTURE_BUFFER, tex);
@@ -295,15 +327,26 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
         }
     }
 
-    private void uploadInstances(TileBufferGroup group,
-                                 int instanceLocation,
-                                 ViewportGrid grid) {
-        int n = grid.getScreenTileCount();
+    /**
+     * 上传逐实例 attribute。
+     *
+     * <p>返回新建的 VBO 句柄，由调用方负责在绘制完成后删除——
+     * 本方法不在内部登记状态，也不对 {@link TileBufferGroup} 写入。
+     *
+     * <p>异常时自我清理：半成品 VBO 不会泄漏给调用方。
+     *
+     * @return 新建的 VBO 句柄
+     */
+    private int uploadInstances(TileBufferGroup group,
+                                int instanceLocation,
+                                ViewportGrid grid) {
+        int n = grid.getViewTileCount();
         int[] tileXY  = grid.getTileXY();
         int[] offsets = group.getOffsets();
         int[] counts  = group.getCounts();
 
         FloatBuffer fb = MemoryUtil.memAllocFloat(n * 4);
+        int vbo = 0;
         try {
             for (int i = 0; i < n; i++) {
                 fb.put(tileXY[i * 2]);
@@ -313,7 +356,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
             }
             fb.flip();
 
-            int vbo = glGenBuffers();
+            vbo = glGenBuffers();
             glBindBuffer(GL_ARRAY_BUFFER, vbo);
             glBufferData(GL_ARRAY_BUFFER, fb, GL_DYNAMIC_DRAW);
 
@@ -323,8 +366,12 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
             glVertexAttribDivisor(instanceLocation, 1);
 
             glBindBuffer(GL_ARRAY_BUFFER, 0);
+        } catch (Throwable t) {
+            if (vbo != 0) glDeleteBuffers(vbo);
+            throw t;
         } finally {
             MemoryUtil.memFree(fb);
         }
+        return vbo;
     }
 }

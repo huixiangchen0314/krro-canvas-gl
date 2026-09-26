@@ -35,7 +35,7 @@ import java.util.Arrays;
  * <pre>
  *   [tileX, tileY, g0.offset, g0.count, g1.offset, g1.count, ...]
  * </pre>
- * draw call 的实例数 = {@link #getScreenTileCount()}。
+ * draw call 的实例数 = {@link #getViewTileCount()}。
  *
  * <h2>线程契约</h2>
  *
@@ -57,7 +57,7 @@ public final class ViewportGrid {
     private final int[] tileXY;
 
     /** 屏幕瓦片总数。 */
-    private final int screenTileCount;
+    private final int viewTileCount;
 
     /**
      * @param viewWidth       视口宽度（像素），必须 &gt; 0
@@ -65,11 +65,11 @@ public final class ViewportGrid {
      * @param tileSize        瓦片边长（像素），必须 &gt; 0
      * @param tileXY          屏幕瓦片坐标数组，长度至少
      *                        {@code 2 * screenTileCount}
-     * @param screenTileCount 屏幕瓦片总数，必须 &ge; 0
+     * @param viewTileCount 屏幕瓦片总数，必须 &ge; 0
      * @throws IllegalArgumentException 参数非法
      */
     public ViewportGrid(int viewWidth, int viewHeight, int tileSize,
-                        int[] tileXY, int screenTileCount) {
+                        int[] tileXY, int viewTileCount) {
         if (viewWidth <= 0) {
             throw new IllegalArgumentException("viewWidth must be > 0: " + viewWidth);
         }
@@ -79,19 +79,19 @@ public final class ViewportGrid {
         if (tileSize <= 0) {
             throw new IllegalArgumentException("tileSize must be > 0: " + tileSize);
         }
-        if (screenTileCount < 0) {
+        if (viewTileCount < 0) {
             throw new IllegalArgumentException(
-                    "screenTileCount must be >= 0: " + screenTileCount);
+                    "screenTileCount must be >= 0: " + viewTileCount);
         }
-        if (tileXY == null || tileXY.length < screenTileCount * 2) {
+        if (tileXY == null || tileXY.length < viewTileCount * 2) {
             throw new IllegalArgumentException(
-                    "tileXY must have length >= " + (screenTileCount * 2));
+                    "tileXY must have length >= " + (viewTileCount * 2));
         }
         this.viewWidth       = viewWidth;
         this.viewHeight      = viewHeight;
         this.tileSize        = tileSize;
-        this.tileXY          = Arrays.copyOf(tileXY, screenTileCount * 2);
-        this.screenTileCount = screenTileCount;
+        this.tileXY          = Arrays.copyOf(tileXY, viewTileCount * 2);
+        this.viewTileCount = viewTileCount;
     }
 
     /**
@@ -145,7 +145,7 @@ public final class ViewportGrid {
     public int getTileSize() { return tileSize; }
 
     /** 屏幕瓦片总数。 */
-    public int getScreenTileCount() { return screenTileCount; }
+    public int getViewTileCount() { return viewTileCount; }
 
     /**
      * 屏幕瓦片坐标数组。每 2 int 一对 {@code [tileX, tileY]}。
@@ -168,6 +168,6 @@ public final class ViewportGrid {
     public String toString() {
         return "ViewportGrid{viewport=" + viewWidth + "x" + viewHeight
                 + ", tileSize=" + tileSize
-                + ", screenTileCount=" + screenTileCount + "}";
+                + ", screenTileCount=" + viewTileCount + "}";
     }
 }

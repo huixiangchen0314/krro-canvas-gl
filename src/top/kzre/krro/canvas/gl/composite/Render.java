@@ -1,5 +1,6 @@
 package top.kzre.krro.canvas.gl.composite;
 
+import top.kzre.colorutils.color.RGB;
 import top.kzre.krro.canvas.gl.resource.*;
 import top.kzre.krro.canvas.gl.tile.GLTiledTextureLayer;
 import top.kzre.krro.core.util.SerialExecutor;
@@ -67,6 +68,11 @@ public final class Render {
             GLCompositeContext ctx,
             Set<Long> dirtyTiles) {
 
+//        return CompletableFuture.completedFuture(
+//                new TiledCanvas(ctx.getTileSize(), RGB.rgba(1, 0, 0, 1))
+//                        .ensureTiles(dirtyTiles)
+//        );
+
         FixedSizeFrameBufferPool fboPool  = ctx.getViewFrameBufferPool();
         SerialExecutor glExecutor = ctx.getGlExecutor();
         int tileSize = ctx.getTileSize();
@@ -83,11 +89,11 @@ public final class Render {
                     if (request == null) {
                         fboPool.release(fboA);
                         fboPool.release(fboB);
-                        TiledCanvas emptyCanvas = ctx.getEmptyCanvas();
+                        TiledCanvas emptyCanvas = ctx.newCanvas();
                         return CompletableFuture.completedFuture(emptyCanvas);
                     }
 
-                    return glExecutor.submit(new MockClearBlueCompositeTask(request))
+                    return glExecutor.submit(new MockClearBlueCompositeTask(fboA))
                             .thenCompose(resultFbo ->{
                                 GLFramebuffer other = (resultFbo == fboA) ? fboB : fboA;
                                 fboPool.release(other);
@@ -139,7 +145,8 @@ public final class Render {
                 tex, tileSize,
                 layer, 1,
                 glExecutor,
-                () -> pool.release(fbo));
+                () -> pool.release(fbo)
+        );
 
         return view.asCanvas();
     }

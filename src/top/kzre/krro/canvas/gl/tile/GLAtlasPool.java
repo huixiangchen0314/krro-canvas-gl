@@ -348,7 +348,7 @@ public final class GLAtlasPool implements AutoCloseable {
                 if (dst.isFull()) {
                     continue;
                 }
-                for (GLAtlas.GLTileData tile : src.getActiveTiles()) {
+                for (GLAtlas.GLTileDataImpl tile : src.getActiveTiles()) {
                     if (dst.isFull()) {
                         break;
                     }
