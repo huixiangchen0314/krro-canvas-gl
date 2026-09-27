@@ -2,10 +2,12 @@ package top.kzre.krro.canvas.gl.tile;
 
 import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.DownloadableTile;
+import top.kzre.krro.canvas.gl.MiscExecutor;
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.resource.PixelCodec;
 import top.kzre.krro.canvas.gl.resource.PixelFormat;
+import top.kzre.krro.canvas.gl.util.BufferUtils;
 import top.kzre.krro.core.util.AsyncExecutor;
 import top.kzre.krro.core.util.DEBUG;
 import top.kzre.krro.util.tile.*;
@@ -271,9 +273,9 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
         public CompletableFuture<Void> downloadTo(TiledCanvas target, int tx, int ty) {
             int refCount = refCount();
             if (refCount <= 0) {
-                throw new IllegalStateException("GLTextureTileDataImpl already released, refCount=" + refCount);
+                throw new IllegalStateException(
+                        "GLTextureTileDataImpl already released, refCount=" + refCount);
             }
-            System.out.println("GLTextureTileDataImpl.downloadTo, refCount=" + refCount);
             int tileSize = owner.tileSize();
             int targetTs = target.getTileSize();
             if (tileSize != targetTs) {
@@ -292,43 +294,40 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
             }
 
             int pixelCount = tileSize * tileSize;
+            int glRow = glRow();
 
-            return owner.glExecutor.submit(() -> {
-                ByteBuffer packed = null;
-                ByteBuffer out = null;
-                try {
-                    int glRow = glRow();
-                    packed = owner.texture().downloadRegion(
-                            layer, canvasColumn * tileSize, glRow * tileSize, tileSize, tileSize);
-                    flipRows(packed, tileSize, tileSize * fmt.internalBytesPerPixel());
-                    int needFloats = PixelCodec.cpuFloats(fmt, pixelCount);
-                    out = MemoryUtil.memAlloc(needFloats * Float.BYTES);
+            // ── GL 线程：只做 readback ──
+            return owner.glExecutor
+                    .submit(() -> owner.texture().downloadRegion(
+                            layer, canvasColumn * tileSize, glRow * tileSize,
+                            tileSize, tileSize))
 
-                    FloatBuffer dst = out.asFloatBuffer();
-                    PixelCodec.unpack(fmt, packed, pixelCount, dst);
-                    dst.flip();
+                    // ── CPU 线程：flip / unpack / replaceTile ──
+                    .thenApplyAsync(packed -> {
+                        try {
+                            // glReadPixels 逐行从低 y 到高 y——输出第一行是瓦片底行；
+                            // canvas 期望第一行是瓦片顶行——翻一次行序
+                            BufferUtils.flipRows(
+                                    packed, tileSize,
+                                    tileSize * fmt.internalBytesPerPixel());
 
-                    target.replaceTile(tx, ty, out);
-                    out = null;
+                            int needFloats = PixelCodec.cpuFloats(fmt, pixelCount);
+                            ByteBuffer out = MemoryUtil.memAlloc(needFloats * Float.BYTES);
+                            try {
+                                FloatBuffer dst = out.asFloatBuffer();
+                                PixelCodec.unpack(fmt, packed, pixelCount, dst);
+                                dst.flip();
 
-                    return null;
-                } finally {
-                    if (packed != null) MemoryUtil.memFree(packed);
-                    if (out != null) MemoryUtil.memFree(out);
-                }
-            });
-        }
-        private static void flipRows(ByteBuffer buf, int rows, int rowBytes) {
-            long base = MemoryUtil.memAddress(buf);
-            byte[] tmp = new byte[rowBytes];
-            for (int top = 0, bot = rows - 1; top < bot; top++, bot--) {
-                long topAddr = base + (long) top * rowBytes;
-                long botAddr = base + (long) bot * rowBytes;
-
-                MemoryUtil.memByteBuffer(topAddr, rowBytes).get(tmp);   // top → tmp
-                MemoryUtil.memCopy(botAddr, topAddr, rowBytes);         // bot → top
-                MemoryUtil.memByteBuffer(botAddr, rowBytes).put(tmp);   // tmp → bot
-            }
+                                target.replaceTile(tx, ty, out);
+                                out = null;   // 所有权交给 target
+                            } finally {
+                                if (out != null) MemoryUtil.memFree(out);
+                            }
+                        } finally {
+                            MemoryUtil.memFree(packed);
+                        }
+                        return null;
+                    }, MiscExecutor.get());
         }
 
         private int glRow() {
