@@ -106,7 +106,7 @@ public final class CompositePlanner {
                 dirtyList, viewWidth, viewHeight, tileSize);
 
         // ── 逆变换收集可见瓦片 + 精确分桶 ──
-        VisibleSet visibleSet = collectVisibleTiles(layers, dirtyList, tileSize);
+        VisibleSet visibleSet = collectVisibleTiles(layers, dirtyList, tileSize, grid);
         if (visibleSet.visible.isEmpty()) {
             System.out.println("[CompositePlanner] No visible tiles found");
             return null;
@@ -182,7 +182,8 @@ public final class CompositePlanner {
      * @return 可见瓦片列表、图层表、屏幕分桶
      */
     private static VisibleSet collectVisibleTiles(
-            List<ILayer> layers, List<Long> dirtyTiles, int tileSize) {
+            List<ILayer> layers, List<Long> dirtyTiles, int tileSize,
+            ViewportGrid view) {
 
         Map<ILayer, Integer> layerEntryMap = new IdentityHashMap<>();
         Map<VisibleKey, Integer> visibleIndex = new HashMap<>();
@@ -190,7 +191,7 @@ public final class CompositePlanner {
         List<VisibleTile> visible = new ArrayList<>();
         List<float[]> layerTable = new ArrayList<>();
         Map<Long, List<Integer>> buckets = new HashMap<>();
-
+        int tilesPerColumn = view.getViewHeight() / tileSize;
         for (ILayer layer : layers) {
             if (!layer.isVisible()) continue;
             TiledCanvas canvas = layer.getCanvas();
@@ -203,7 +204,6 @@ public final class CompositePlanner {
                 throw new IllegalStateException(
                         "singular layer transform (det ≈ 0)");
             }
-
             for (Long dirtyKey : dirtyTiles) {
                 Set<Long> layerKeys = LayerUtils.transformTile(dirtyKey, tileSize, inv);
                 if (layerKeys == null || layerKeys.isEmpty()) continue;
@@ -221,13 +221,17 @@ public final class CompositePlanner {
                         if (lei == null) {
                             lei = layerTable.size();
                             layerEntryMap.put(layer, lei);
+
                             layerTable.add(new float[]{
                                     inv[0], inv[1], inv[2], inv[3],
                                     inv[4], inv[5], alpha, 0f
                             });
                         }
+
                         idx = visible.size();
-                        visible.add(new VisibleTile(canvas, tile, lei));
+                        int glTileOriginX = tx * tileSize;
+                        int glTileOriginY = ty * tileSize;   // ← y 翻到图层本地
+                        visible.add(new VisibleTile(canvas, tile, lei,glTileOriginX, glTileOriginY ));
                         visibleIndex.put(vk, idx);
                     }
 
@@ -323,6 +327,7 @@ public final class CompositePlanner {
         return map;
     }
 
+
     /**
      * 把瓦片当前的 {@link GLTileData} 转成规划侧的 {@link AtlasSlot}。
      *
@@ -375,9 +380,7 @@ public final class CompositePlanner {
         float[] tileTable = new float[n * 8];
         for (int i = 0; i < n; i++) {
             VisibleTile vt = visible.get(i);
-            Tile tile = vt.tile;
-            int tx = tile.tx();
-            int ty = tile.ty();
+
             AtlasSlot slot = slots.get(i);
             GLTiledTextureLayout layout =
                     atlases[slot.getAtlasIndex()].getLayout();
@@ -390,8 +393,8 @@ public final class CompositePlanner {
             tileTable[base + 1] = v0;
             tileTable[base + 2] = slot.getAtlasIndex();   // unit
             tileTable[base + 3] = slot.getLayer();        // texLayer
-            tileTable[base + 4] = tx;                     // tileX
-            tileTable[base + 5] = ty;                     // tileY
+            tileTable[base + 4] = vt.glTileOriginX;                     // tileX
+            tileTable[base + 5] = vt.glTileOriginY;                     // tileY
             tileTable[base + 6] = vt.layerTableIndex;     // layerEntry
             tileTable[base + 7] = 0f;                     // pad
         }
@@ -568,12 +571,16 @@ public final class CompositePlanner {
         final TiledCanvas canvas;
         final Tile        tile;
         final int         layerTableIndex;
-
+        final int glTileOriginX;
+        final int glTileOriginY;
         VisibleTile(TiledCanvas canvas, Tile tile,
-                    int layerTableIndex) {
+                    int layerTableIndex, int glTileOriginX, int glTileOriginY) {
             this.canvas          = canvas;
             this.tile            = tile;
             this.layerTableIndex = layerTableIndex;
+
+            this.glTileOriginX = glTileOriginX;
+            this.glTileOriginY = glTileOriginY;
         }
     }
 

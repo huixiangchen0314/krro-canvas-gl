@@ -222,7 +222,7 @@ public class GLCompositeContext implements AutoCloseable {
         }
         GLQuad q = quad;
         if (q == null) {
-            q = GLQuad.create();
+            q = GLQuad.create(GLQuad.Orientation.Y_DOWN);
             q.bindPositionAttribute(ShaderConstants.ATTRIBUTE_POSITION_QUAD);
             quad = q;
         }

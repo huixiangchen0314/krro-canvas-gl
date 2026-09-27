@@ -300,9 +300,10 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
                     int glRow = glRow();
                     packed = owner.texture().downloadRegion(
                             layer, canvasColumn * tileSize, glRow * tileSize, tileSize, tileSize);
-
+                    flipRows(packed, tileSize, tileSize * fmt.internalBytesPerPixel());
                     int needFloats = PixelCodec.cpuFloats(fmt, pixelCount);
                     out = MemoryUtil.memAlloc(needFloats * Float.BYTES);
+
                     FloatBuffer dst = out.asFloatBuffer();
                     PixelCodec.unpack(fmt, packed, pixelCount, dst);
                     dst.flip();
@@ -316,6 +317,18 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
                     if (out != null) MemoryUtil.memFree(out);
                 }
             });
+        }
+        private static void flipRows(ByteBuffer buf, int rows, int rowBytes) {
+            long base = MemoryUtil.memAddress(buf);
+            byte[] tmp = new byte[rowBytes];
+            for (int top = 0, bot = rows - 1; top < bot; top++, bot--) {
+                long topAddr = base + (long) top * rowBytes;
+                long botAddr = base + (long) bot * rowBytes;
+
+                MemoryUtil.memByteBuffer(topAddr, rowBytes).get(tmp);   // top → tmp
+                MemoryUtil.memCopy(botAddr, topAddr, rowBytes);         // bot → top
+                MemoryUtil.memByteBuffer(botAddr, rowBytes).put(tmp);   // tmp → bot
+            }
         }
 
         private int glRow() {
