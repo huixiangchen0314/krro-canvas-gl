@@ -246,7 +246,6 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
     private void uploadIfNeeded(TileRef ref) {
         UploadableTile uploadable = ref.getTile().queryData(UploadableTile.class);
         if (uploadable != null) {
-            System.out.println("upload tile");
             uploadable.ensureUploaded();
         }
     }

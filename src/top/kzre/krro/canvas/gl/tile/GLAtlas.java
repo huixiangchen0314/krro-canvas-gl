@@ -3,7 +3,6 @@ package top.kzre.krro.canvas.gl.tile;
 import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.UploadableTile;
 import top.kzre.krro.canvas.gl.resource.*;
-import top.kzre.krro.core.util.DEBUG;
 import top.kzre.krro.util.tile.*;
 
 import java.nio.ByteBuffer;
@@ -645,8 +644,6 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         public int acquire() {
             int c = peer.acquire();
             proxyRefCount.incrementAndGet();
-            System.out.println("[GLTileDataImpl#acquire] -> " + c + " " + this
-                    + " at " + DEBUG.stack());
             return c;
         }
 
@@ -656,10 +653,6 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
 
             int after  = peer.release();
             boolean free = proxyRefCount.decrementAndGet() == 0;
-            System.out.println("[GLTileDataImpl#release]"
-                    + " " + this
-                    + "free: " + free
-                    + " at \n" + DEBUG.stack());
 
             if (free) {
                 handle.close();
@@ -686,50 +679,14 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
             int needBytes = PixelCodec.gpuBytes(fmt, pixelCount);
             ByteBuffer tmp = MemoryUtil.memAlloc(needBytes);
 
-            System.out.println("[upload.begin]"
-                    + " tileSize=" + tileSize
-                    + " pixelCount=" + pixelCount
-                    + " fmt.internal=0x" + Integer.toHexString(fmt.getGlInternalFormat())
-                    + " fmt.client=0x" + Integer.toHexString(fmt.getGlClientFormat())
-                    + " fmt.type=0x" + Integer.toHexString(fmt.getGlType())
-                    + " channels=" + PixelCodec.channels(fmt)
-                    + " src.remaining=" + src.remaining()
-                    + " needFloats=" + needFloats
-                    + " needBytes=" + needBytes
-                    + " peer.class=" + peer.getClass().getSimpleName());
-
             try {
                 FloatBuffer slice = src.slice();
                 slice.limit(needFloats);
-                System.out.println("[upload.beforePack] slice.remaining=" + slice.remaining()
-                        + " tmp.capacity=" + tmp.capacity()
-                        + " tmp.position=" + tmp.position()
-                        + " tmp.limit=" + tmp.limit());
-
                 PixelCodec.pack(fmt, slice, pixelCount, tmp);
-
-                System.out.println("[upload.afterPack] tmp.position=" + tmp.position()
-                        + " tmp.limit=" + tmp.limit()
-                        + " tmp.remaining=" + tmp.remaining());
 
                 tmp.flip();
 
-                System.out.println("[upload.afterFlip] tmp.position=" + tmp.position()
-                        + " tmp.limit=" + tmp.limit()
-                        + " tmp.remaining=" + tmp.remaining()
-                        + " expectedBytes=" + needBytes
-                        + " matches=" + (tmp.remaining() == needBytes));
-
-                // 前 32 字节的 hex——看 pack 是否真的写了非零
-                int peek = Math.min(32, tmp.remaining());
-                StringBuilder hex = new StringBuilder();
-                for (int i = 0; i < peek; i++) {
-                    hex.append(String.format("%02x ", tmp.get(i) & 0xFF));
-                }
-                System.out.println("[upload.bytes] first " + peek + ": " + hex);
-
                 handle.upload(tmp);
-                System.out.println("[upload.done]");
             } finally {
                 MemoryUtil.memFree(tmp);
             }

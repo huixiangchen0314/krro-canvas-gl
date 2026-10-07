@@ -9,7 +9,6 @@ import top.kzre.krro.canvas.gl.resource.PixelCodec;
 import top.kzre.krro.canvas.gl.resource.PixelFormat;
 import top.kzre.krro.canvas.gl.util.BufferUtils;
 import top.kzre.krro.core.util.AsyncExecutor;
-import top.kzre.krro.core.util.DEBUG;
 import top.kzre.krro.util.tile.*;
 
 import java.nio.ByteBuffer;
@@ -337,23 +336,17 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
 
         @Override
         protected void onRelease() {
-            System.out.println("GLTextureTileDataImpl.onRelease, refCount="+ refCount()+" \n"
-                            + DEBUG.stack());
             owner.decrementActiveTile();
         }
 
         @Override
         public int acquire() {
-            System.out.println("GLTextureTileDataImpl.acquire, refCount="+ refCount()+" \n"
-            + DEBUG.stack());
 
             return super.acquire();
         }
 
         @Override
         public int release() {
-            System.out.println("GLTextureTileDataImpl.release, refCount="+ refCount()+" \n"
-                    + DEBUG.stack());
             return super.release();
         }
 
