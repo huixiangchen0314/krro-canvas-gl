@@ -41,9 +41,7 @@
                       (try
                         (if e
                           (throw e)
-                          (do
-                            (.keepTiles result-canvas dirty-tiles)
-                            (.mergeCanvas backdrop-canvas result-canvas)))
+                          (.mergeCanvas backdrop-canvas result-canvas))
                         (finally
                           (try
                             (.close result-canvas)

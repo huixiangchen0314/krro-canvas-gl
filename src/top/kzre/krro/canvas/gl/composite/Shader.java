@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * 合成着色器。封装一次 draw call 的完整生命周期。
  *
- * <p><b>声明依赖</b>：{@link #tiles()} 返回本 shader 需要的全部
+ * <p><b>声明依赖</b>：{@link #tileGroups()} 返回本 shader 需要的全部
  * {@link TileBufferGroup}。{@link #instanceLocation(int)} 返回每个
  * group 的实例 attribute location——由 shader 的 vertex 声明决定。
  *
@@ -24,7 +24,7 @@ public interface Shader {
      * <p>列表顺序即 group 在 shader 逻辑中的角色顺序。单 group
      * shader 返回单元素列表。
      */
-    List<TileBufferGroup> tiles();
+    List<TileBufferGroup> tileGroups();
 
     /**
      * 第 {@code groupIndex} 个 group 的实例 attribute location。
@@ -33,7 +33,7 @@ public interface Shader {
      * group 1 用 location 2。执行器把 group 的实例数据绑到这个
      * location 上。
      *
-     * @param groupIndex group 在 {@link #tiles()} 列表中的下标
+     * @param groupIndex group 在 {@link #tileGroups()} 列表中的下标
      * @return attribute location
      */
     int instanceLocation(int groupIndex);

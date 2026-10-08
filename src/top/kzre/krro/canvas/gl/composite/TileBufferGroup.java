@@ -1,6 +1,6 @@
 package top.kzre.krro.canvas.gl.composite;
 
-import top.kzre.krro.canvas.gl.tile.AtlasSlot;
+import top.kzre.krro.canvas.gl.tile.TextureTileSlot;
 import top.kzre.krro.canvas.gl.tile.TileRef;
 
 import java.util.Collections;
@@ -12,7 +12,7 @@ import java.util.Map;
  *
  * <p><b>纯数据</b>：只描述本组的 buffer 布局——瓦片表、图层表、
  * 索引表、屏幕瓦片映射、换出映射。不含纹理资源、不含纹理单元
- * 分配（那是 {@link TileBufferBundle} 的职责）。
+ * 分配（那是 {@link ShaderDraw} 的职责）。
  *
  * <p>一次 draw call 所需的瓦片相关 buffer 都在这里打包好，执行
  * 阶段只上传、绑定、draw。
@@ -91,7 +91,7 @@ public final class TileBufferGroup {
 
     /**
      * 每个屏幕瓦片在本组 indexList 中的起始下标。
-     * 长度 = 屏幕瓦片总数。顺序与 {@link ViewportGrid} 的 tileXY 一致。
+     * 长度 = 屏幕瓦片总数。顺序与 {@link ViewTileInfo} 的 tileXY 一致。
      */
     private final int[] offsets;
 
@@ -143,7 +143,7 @@ public final class TileBufferGroup {
      *
      * <p>构造时做防御性拷贝 + 不可变包装。
      */
-    private final Map<AtlasSlot, TileRef> tiles;
+    private final Map<TextureTileSlot, TileRef> slotTileRefMap;
 
     public TileBufferGroup(int tileTableUnit,
                            int layerTableUnit,
@@ -153,7 +153,7 @@ public final class TileBufferGroup {
                            float[] layerTable, int layerEntryCount,
                            float[] tileTable, int tileEntryCount,
                            int[] indexList, int indexCount,
-                           Map<AtlasSlot, TileRef> tiles) {
+                           Map<TextureTileSlot, TileRef> slotTileRefMap) {
         this.tileTableUnit   = tileTableUnit;
         this.layerTableUnit  = layerTableUnit;
         this.indexTableUnit  = indexTableUnit;
@@ -165,7 +165,7 @@ public final class TileBufferGroup {
         this.tileEntryCount  = tileEntryCount;
         this.indexList       = indexList;
         this.indexCount      = indexCount;
-        this.tiles           = Collections.unmodifiableMap(new LinkedHashMap<>(tiles));
+        this.slotTileRefMap = Collections.unmodifiableMap(new LinkedHashMap<>(slotTileRefMap));
     }
 
     // ═══════════════════════════════════════════════
@@ -188,5 +188,5 @@ public final class TileBufferGroup {
     public int[]   getIndexList()             { return indexList; }
     public int     getIndexCount()            { return indexCount; }
 
-    public Map<AtlasSlot, TileRef> getTiles() { return tiles; }
+    public Map<TextureTileSlot, TileRef> getSlotTileRefMap() { return slotTileRefMap; }
 }

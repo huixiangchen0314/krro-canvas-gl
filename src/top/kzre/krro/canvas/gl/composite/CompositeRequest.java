@@ -14,7 +14,7 @@ import java.util.List;
  * <ul>
  *   <li>{@link #getPage()} —— atlas 换页能力，所有 bundle 共享</li>
  *   <li>{@link #getViewportGrid()} —— 屏幕瓦片网格</li>
- *   <li>{@link #getBundles()} —— 按顺序执行的 bundle 列表</li>
+ *   <li>{@link #getDraws()} —— 按顺序执行的 bundle 列表</li>
  *   <li>{@link #getFboA()} / {@link #getFboB()} —— ping-pong 双 FBO</li>
  * </ul>
  *
@@ -26,7 +26,7 @@ import java.util.List;
  *
  * <h2>bundles 列表</h2>
  *
- * <p>每个 {@link TileBufferBundle} 对应一次 draw call。列表顺序即
+ * <p>每个 {@link ShaderDraw} 对应一次 draw call。列表顺序即
  * 执行顺序。第 i 个 bundle 的输出写 {@code pool[i % 2]}。
  *
  * <h2>线程契约</h2>
@@ -36,32 +36,32 @@ import java.util.List;
 public final class CompositeRequest {
 
     private final AtlasPoolPage page;
-    private final ViewportGrid viewportGrid;
-    private final List<TileBufferBundle>  bundles;
+    private final ViewTileInfo viewTileInfo;
+    private final List<ShaderDraw> draws;
     private final GLFramebuffer fboA;
     private final GLFramebuffer fboB;
     private final GLCompositeContext context;
-    private CompositeRequest(GLCompositeContext context, ViewportGrid viewportGrid, List<TileBufferBundle> bundles, AtlasPoolPage page,
+    private CompositeRequest(GLCompositeContext context, ViewTileInfo viewTileInfo, List<ShaderDraw> draws, AtlasPoolPage page,
                              GLFramebuffer fboA,
                              GLFramebuffer fboB) {
         this.page         = page;
-        this.viewportGrid = viewportGrid;
-        this.bundles      = bundles;
+        this.viewTileInfo = viewTileInfo;
+        this.draws = draws;
         this.fboA         = fboA;
         this.fboB         = fboB;
         this.context = context;
     }
 
     public static CompositeRequest of(GLCompositeContext context,
-                                      ViewportGrid viewportGrid,
-                                      List<TileBufferBundle> bundles,
+                                      ViewTileInfo viewTileInfo,
+                                      List<ShaderDraw> bundles,
                                       AtlasPoolPage page,
                                       GLFramebuffer fboA,
                                       GLFramebuffer fboB) {
         if (page == null)         throw new IllegalArgumentException("page must not be null");
-        if (viewportGrid == null) throw new IllegalArgumentException("viewportGrid must not be null");
+        if (viewTileInfo == null) throw new IllegalArgumentException("viewportGrid must not be null");
         if (bundles == null)      throw new IllegalArgumentException("bundles must not be null");
-        for (TileBufferBundle b : bundles) {
+        for (ShaderDraw b : bundles) {
             if (b == null) {
                 throw new IllegalArgumentException("bundles must not contain null");
             }
@@ -72,7 +72,7 @@ public final class CompositeRequest {
 
         return new CompositeRequest(
                 context,
-                viewportGrid,
+                viewTileInfo,
                 Collections.unmodifiableList(new ArrayList<>(bundles)),
                 page,
                 fboA, fboB);
@@ -81,16 +81,16 @@ public final class CompositeRequest {
     /** atlas 换页能力。所有 bundle 共享。 */
     public AtlasPoolPage          getPage()         { return page; }
 
-    public ViewportGrid           getViewportGrid() { return viewportGrid; }
-    public List<TileBufferBundle> getBundles()      { return bundles; }
+    public ViewTileInfo getViewportGrid() { return viewTileInfo; }
+    public List<ShaderDraw> getDraws()      { return draws; }
 
     public GLFramebuffer          getFboA()         { return fboA; }
     public GLFramebuffer          getFboB()         { return fboB; }
 
     @Override
     public String toString() {
-        return "CompositeRequest{grid=" + viewportGrid
-                + ", bundles=" + bundles.size() + "}";
+        return "CompositeRequest{grid=" + viewTileInfo
+                + ", bundles=" + draws.size() + "}";
     }
 
     public GLCompositeContext getContext() {

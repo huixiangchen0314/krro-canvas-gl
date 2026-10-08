@@ -1,7 +1,9 @@
 package top.kzre.krro.canvas.gl.composite;
 
 import top.kzre.krro.canvas.gl.resource.*;
+import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
 import top.kzre.krro.canvas.gl.tile.GLAtlasPool;
+import top.kzre.krro.canvas.gl.tile.GLTiledTextureLayout;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.TiledCanvas;
 
@@ -54,6 +56,7 @@ public class GLCompositeContext implements AutoCloseable {
     private final SerialExecutor glExecutor;
 
     private final GLAtlasPool atlasPool;
+    private final AtlasPoolPage atlasPoolPage;
 
     /**
      * 本上下文共享的 quad。GL 线程首次 {@link #getQuad()} 时创建，
@@ -110,6 +113,7 @@ public class GLCompositeContext implements AutoCloseable {
 
         this.glExecutor      = glExecutor;
         this.atlasPool       = atlasPool;
+        this.atlasPoolPage   = atlasPool.page();
         this.tileSize        = tileSize;
         this.viewFboPoolCapacity = viewFboPoolCapacity;
         this.pixelFormat = pixelFormat;
@@ -243,8 +247,8 @@ public class GLCompositeContext implements AutoCloseable {
 
     public SerialExecutor getGlExecutor() { return glExecutor; }
 
-    /** atlas 池。所有权在本类——不要在外部关闭。 */
     public GLAtlasPool getAtlasPool() { return atlasPool; }
+    public AtlasPoolPage getAtlasPoolPage() { return atlasPoolPage; }
 
     public boolean isClosed() { return closed.get(); }
 
@@ -335,5 +339,9 @@ public class GLCompositeContext implements AutoCloseable {
 
     private static int alignUp(int value, int multiple) {
         return ((value + multiple - 1) / multiple) * multiple;
+    }
+
+    public int getMinSingleDrawnTiles() {
+        return 200;
     }
 }

@@ -7,7 +7,7 @@ import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.resource.GLQuad;
 import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
-import top.kzre.krro.canvas.gl.tile.AtlasSlot;
+import top.kzre.krro.canvas.gl.tile.TextureTileSlot;
 import top.kzre.krro.canvas.gl.tile.GLTile;
 import top.kzre.krro.canvas.gl.tile.TileRef;
 
@@ -64,24 +64,24 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
 
     @Override
     public GLFramebuffer call() throws Exception {
-        ViewportGrid viewport        = request.getViewportGrid();
-        AtlasPoolPage atlasPage      = request.getPage();
-        List<TileBufferBundle> bundles = request.getBundles();
+        ViewTileInfo viewport = request.getViewportGrid();
+        AtlasPoolPage atlasPage = request.getPage();
+        List<ShaderDraw> draws = request.getDraws();
         GLCompositeContext context = request.getContext();
-        GLFramebuffer[] pool = { request.getFboA(), request.getFboB() };
+        GLFramebuffer[] fboPair = {request.getFboA(), request.getFboB()};
 
-        if (bundles.isEmpty()) {
-            pool[0].bind();
+        if (draws.isEmpty()) {
+            fboPair[0].bind();
             try {
                 glClearColor(0f, 0f, 0f, 0f);
                 glClear(GL_COLOR_BUFFER_BIT);
             } finally {
                 GLFramebuffer.unbind();
             }
-            return pool[0];
+            return fboPair[0];
         }
-
-        for (GLFramebuffer fbo : pool) {
+        System.out.println("draw count: " + draws.size());
+        for (GLFramebuffer fbo : fboPair) {
             fbo.bind();
             try {
                 glClearColor(0f, 0f, 0f, 0f);
@@ -92,22 +92,22 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
         }
 
         GLQuad quad = context.getQuad();
-        List<TileBufferBundle> executed = new ArrayList<>();
+        List<ShaderDraw> executed = new ArrayList<>();
 
         // 本次调用生成的所有实例 VBO——纯局部状态，退出时统一释放。
         // 不写入任何外部对象，无跨调用副作用。
         List<Integer> transientVbos = new ArrayList<>();
 
         try {
-            for (int i = 0; i < bundles.size(); i++) {
-                TileBufferBundle bundle = bundles.get(i);
-                GLFramebuffer target = pool[i % 2];
-                Shader shader = bundle.getShader();
+            for (int i = 0; i < draws.size(); i++) {
+                ShaderDraw draw = draws.get(i);
+                GLFramebuffer target = fboPair[i % 2];
+                Shader shader = draw.getShader();
 
                 quad.bind();
                 try {
-                    // 1. 准备本 bundle 的所有 group
-                    List<TileBufferGroup> groups = shader.tiles();
+                    // 1. 准备本 draw 的所有 group
+                    List<TileBufferGroup> groups = shader.tileGroups();
                     for (int gi = 0; gi < groups.size(); gi++) {
                         prepareGroup(atlasPage,
                                 groups.get(gi),
@@ -118,7 +118,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                     }
 
                     // 2. 绑定 bindables
-                    GLBindable[] bindables = bundle.getBindables();
+                    GLBindable[] bindables = draw.getBindables();
                     for (int u = 0; u < bindables.length; u++) {
                         GLBindable b = bindables[u];
                         if (b != null) {
@@ -138,11 +138,17 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                     } finally {
                         GLFramebuffer.unbind();
                     }
-                } finally {
+                }
+                catch (Exception e) {
+                    System.out.println("composite failed."
+                            + "draw index: " + i );
+                    throw e;
+                }
+                finally {
                     GLQuad.unbind();
                 }
 
-                executed.add(bundle);
+                executed.add(draw);
             }
         } finally {
             // 统一释放本任务创建的临时 VBO——正常返回、异常、
@@ -152,17 +158,17 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
             }
         }
 
-        return pool[(bundles.size() - 1) % 2];
+        return fboPair[(draws.size() - 1) % 2];
     }
 
     private void prepareGroup(AtlasPoolPage page,
                               TileBufferGroup group,
                               int instanceLocation,
-                              ViewportGrid grid,
-                              List<TileBufferBundle> executed,
+                              ViewTileInfo grid,
+                              List<ShaderDraw> executed,
                               List<Integer> transientVbos) {
         // 1. 换入瓦片
-        for (Map.Entry<AtlasSlot, TileRef> e : group.getTiles().entrySet()) {
+        for (Map.Entry<TextureTileSlot, TileRef> e : group.getSlotTileRefMap().entrySet()) {
             pageIn(page, e.getKey(), e.getValue(), executed);
         }
 
@@ -209,9 +215,9 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
      * @param executed 已经渲染过的 bundle 列表
      */
     private void pageIn(AtlasPoolPage page,
-                        AtlasSlot slot,
+                        TextureTileSlot slot,
                         TileRef ref,
-                        List<TileBufferBundle> executed) {
+                        List<ShaderDraw> executed) {
         // ── 1. 已是 GPU 形态：确保上传 ──
         if (ref.getTile().queryData(GLTile.class) != null) {
             uploadIfNeeded(ref);
@@ -230,6 +236,10 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
             throw new IllegalStateException(
                     "planning error: slot " + slot + " is occupied but no "
                             + "occupant found in executed bundles");
+        }
+        // 和已经占用的是一个对象
+        if (ref.equals(occupant)){
+            return;
         }
 
         occupant.pageOut();
@@ -258,12 +268,12 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
      *
      * @return 占用者的 TileRef；未找到返回 null
      */
-    private TileRef findOccupant(List<TileBufferBundle> executed, AtlasSlot slot) {
+    private TileRef findOccupant(List<ShaderDraw> executed, TextureTileSlot slot) {
         for (int i = executed.size() - 1; i >= 0; i--) {
-            TileBufferBundle bundle = executed.get(i);
-            Shader shader = bundle.getShader();
-            for (TileBufferGroup g : shader.tiles()) {
-                TileRef ref = g.getTiles().get(slot);
+            ShaderDraw draw = executed.get(i);
+            Shader shader = draw.getShader();
+            for (TileBufferGroup group : shader.tileGroups()) {
+                TileRef ref = group.getSlotTileRefMap().get(slot);
                 if (ref != null) {
                     return ref;
                 }
@@ -342,7 +352,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
      */
     private int uploadInstances(TileBufferGroup group,
                                 int instanceLocation,
-                                ViewportGrid grid) {
+                                ViewTileInfo grid) {
         int n = grid.getViewTileCount();
         int[] tileXY  = grid.getTileXY();
         int[] offsets = group.getOffsets();

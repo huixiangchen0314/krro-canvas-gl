@@ -36,7 +36,7 @@ package top.kzre.krro.canvas.gl.tile;
  *
  * <p><b>线程契约</b>：纯数据，无 GL 副作用，任意线程可构造和读取。
  */
-public final class AtlasSlot {
+public final class TextureTileSlot {
     /** atlas 在 AtlasPoolPage 中的下标。不是 GL 纹理单元。 */
     private final int atlasIndex;
     /** texture array 层索引。 */
@@ -48,7 +48,7 @@ public final class AtlasSlot {
     /** 层内列——atlas 槽位网格的第几列。无方向语义。 */
     private final int dataColumn;
 
-    public AtlasSlot(int atlasIndex, int layer, int dataRow, int dataColumn) {
+    public TextureTileSlot(int atlasIndex, int layer, int dataRow, int dataColumn) {
         this.atlasIndex = atlasIndex;
         this.layer = layer;
         this.dataRow = dataRow;
@@ -67,8 +67,8 @@ public final class AtlasSlot {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof AtlasSlot)) return false;
-        AtlasSlot that = (AtlasSlot) o;
+        if (!(o instanceof TextureTileSlot)) return false;
+        TextureTileSlot that = (TextureTileSlot) o;
         return atlasIndex == that.atlasIndex
                 && layer == that.layer
                 && dataRow == that.dataRow

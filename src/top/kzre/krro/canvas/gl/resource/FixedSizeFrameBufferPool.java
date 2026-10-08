@@ -87,6 +87,63 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
         }
     }
 
+    /**
+     * 从两个不同的纹理各取一个空闲 FBO。
+     *
+     * <p><b>用途</b>：ping-pong 合成需要两张颜色附件不同的 FBO——
+     * draw i 写其中一张、读另一张。同一张纹理的不同 layer 共享同一
+     * 颜色附件，不能满足要求。
+     *
+     * <p><b>策略</b>：优先复用已有 slot——先找第一个有空闲 FBO 的
+     * slot 取一个，再找第二个不同 slot 取一个。任一不足时从
+     * texturePool 借一张新纹理创建新 slot。
+     *
+     * <p><b>契约</b>：返回的两个 FBO 的颜色附件保证不同纹理对象。
+     * 两个 FBO 都使用后必须分别 {@link #release(GLFramebuffer)} 归还。
+     *
+     * @throws IllegalStateException texturePool 已关闭
+     */
+    public GLFramebuffer[] acquire2() {
+        synchronized (lock) {
+            GLFramebuffer a = null;
+            GLFramebuffer b = null;
+
+            // 1. 遍历已有 slot，从两个不同 slot 各取一个空闲 FBO。
+            //    同一个 slot 只取一次——确保 a 与 b 来自不同纹理。
+            for (TextureSlot slot : slots) {
+                GLFramebuffer fbo = slot.tryAcquire();
+                if (fbo == null) continue;
+
+                if (a == null) {
+                    a = fbo;
+                } else {
+                    b = fbo;
+                    break;
+                }
+            }
+
+            // 2. 任一为空则借新纹理补足。
+            //    注意：a 为空说明现有 slot 都没空闲；b 为空说明只有
+            //    一个 slot 有空闲——两种情况都需要新纹理。
+            if (a == null) {
+                GLTexture tex = texturePool.acquire();
+                TextureSlot slot = new TextureSlot(tex);
+                slots.add(slot);
+                a = slot.tryAcquire();
+            }
+            if (b == null) {
+                GLTexture tex = texturePool.acquire();
+                TextureSlot slot = new TextureSlot(tex);
+                slots.add(slot);
+                b = slot.tryAcquire();
+            }
+
+            activeCount += 2;
+            return new GLFramebuffer[]{ a, b };
+        }
+    }
+
+
     // ═══════════════════════════════════════════════
     // 归还
     // ═══════════════════════════════════════════════
@@ -164,6 +221,7 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
         }
     }
 
+
     /**
      * 当前可立即复用的空闲 FBO 数。
      *
@@ -185,6 +243,40 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
             int n = 0;
             for (TextureSlot slot : slots) {
                 n += slot.idleCount();
+            }
+            return n;
+        }
+    }
+
+
+    /**
+     * 统计空闲 FBO 数不低于 {@code leastIdle} 的 slot 数量。
+     *
+     * <p><b>语义</b>：不是"某个 slot 有多少空闲 FBO"，也不是
+     * "所有 slot 一共有多少空闲 FBO"——而是"有多少个 slot 每个
+     * 至少能提供 {@code leastIdle} 个空闲 FBO"。前者看
+     * {@link #getIdleCount()}，本方法看分布。
+     *
+     * <p><b>用途</b>：调用方在调度前预判——某个需要"多个不同纹理
+     * 的 FBO"的操作，能否从已有 slot 中不借新纹理地满足。典型：
+     * {@link #acquire2()} 需要两个来自不同 slot 的空闲 FBO，
+     * 用 {@code countSlotsWithIdleAtLeast(1) >= 2} 即可预判是否会
+     * 触发 {@code texturePool.acquire()} 的 GL 调度。
+     *
+     * <p><b>快照语义</b>：并发场景下数值随时会变，不构成任何保留
+     * 承诺——调用方自行理解后续 {@code acquire} 仍可能借新纹理。
+     *
+     * @param leastIdle 每个 slot 计入统计所需的最少空闲 FBO 数；
+     *                  0 时统计全部 slot
+     * @return 满足条件的 slot 数
+     */
+    public int countSlotsWithIdleAtLeast(int leastIdle) {
+        synchronized (lock) {
+            int n = 0;
+            for (TextureSlot slot : slots) {
+                if (slot.idleCount() >= leastIdle) {
+                    n++;
+                }
             }
             return n;
         }

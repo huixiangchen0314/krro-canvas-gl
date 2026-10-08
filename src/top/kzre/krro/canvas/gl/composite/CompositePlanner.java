@@ -1,30 +1,18 @@
 package top.kzre.krro.canvas.gl.composite;
 
 import top.kzre.colorutils.blend.Blends;
-import top.kzre.krro.canvas.core.layer.LayerUtils;
-import top.kzre.krro.canvas.gl.composite.shaders.NormalShader;
+import top.kzre.krro.canvas.gl.resource.FixedSizeFrameBufferPool;
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
-import top.kzre.krro.canvas.gl.resource.GLProgram;
-import top.kzre.krro.canvas.gl.resource.GLProgramCache;
 import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
-import top.kzre.krro.canvas.gl.tile.AtlasSlot;
 import top.kzre.krro.canvas.gl.tile.GLAtlas;
-import top.kzre.krro.canvas.gl.tile.GLAtlas.GLTileData;
+import top.kzre.krro.canvas.gl.tile.GLTile;
 import top.kzre.krro.canvas.gl.tile.GLTiledTextureLayout;
-import top.kzre.krro.canvas.gl.tile.TileRef;
-import top.kzre.krro.util.math.KMath;
+import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.Tile;
 import top.kzre.krro.util.tile.TiledCanvas;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.IdentityHashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 public final class CompositePlanner {
 
@@ -37,7 +25,6 @@ public final class CompositePlanner {
     public static CompositeRequest plan(
             List<ILayer> layers,
             GLCompositeContext context,
-
             GLFramebuffer fboA,
             GLFramebuffer fboB,
             Set<Long> dirtyTiles) {
@@ -45,7 +32,6 @@ public final class CompositePlanner {
         int viewWidth  = context.getViewWidth();
         int viewHeight = context.getViewHeight();
         int tileSize   = context.getTileSize();
-        GLProgramCache programs = context.getProgramCache();
 
         if (viewWidth <= 0 || viewHeight <= 0) {
             throw new IllegalStateException(
@@ -60,59 +46,184 @@ public final class CompositePlanner {
         if (layers.isEmpty() || dirtyTiles.isEmpty()) {
             return null;
         }
+        if (fboA.getColorAttachment() == fboB.getColorAttachment()) {
+            throw new IllegalStateException(
+                    "ping-pong requires distinct color attachments; "
+                            + "pool returned two FBOs sharing the same texture: "
+                            + fboA.getColorAttachment());
+        }
         List<Long> dirtyList = new ArrayList<>(dirtyTiles);
         Collections.sort(dirtyList);
 
-        AtlasPoolPage page = context.getAtlasPool().page();
+        int minSingleDrawnTiles = context.getMinSingleDrawnTiles();
+        SerialExecutor glExecutor = context.getGlExecutor();
+        AtlasPoolPage page = context.getAtlasPoolPage();
+        page.purge();
 
-        ViewportGrid grid = buildViewGrid(
+        ILayer fboALayer = FBOUtils.wrapLayer(fboA, tileSize, glExecutor);
+        ILayer fboBLayer = FBOUtils.wrapLayer(fboB, tileSize, glExecutor);
+
+        ViewTileInfo viewTileInfo = buildViewGrid(
                 dirtyList, viewWidth, viewHeight, tileSize);
 
-        VisibleSet visibleSet = collectVisibleTiles(layers, dirtyList, tileSize, grid);
-        if (visibleSet.visible.isEmpty()) {
+        // ── 按 shader 分组 ──
+        ShaderDrwBundler bundler = MockShaderDrwBundler.INSTANCE;
+        List<ShaderLayerBundle> bundles = bundler.bundle(layers);
+        if (bundles.isEmpty()) {
             return null;
         }
 
+        // ── 每批：注入 backdrop，收集可见瓦片 ──
+        int maxSingleTiles = 0;
+        List<ShaderBatchBundle> batchBundles = new ArrayList<>();
+
+        for (ShaderLayerBundle shaderLayerBundle : bundles) {
+            String shaderKey = shaderLayerBundle.getShaderKey();
+            List<ILayer> bundledLayers = shaderLayerBundle.getLayers();
+
+            ShaderLayerTileSet layerTileSet = TileProjector.projectLayersInto(
+                    bundledLayers, dirtyList, tileSize,
+                    ShaderLayerTileSet.create());
+            if (layerTileSet.layerTileRefs.isEmpty()) {
+                continue;
+            }
+
+            int size = layerTileSet.layerTileRefs.size();
+            if (size > maxSingleTiles) {
+                maxSingleTiles = size;
+            }
+
+            ShaderLayerBundle rebuilt = new ShaderLayerBundle(shaderKey, bundledLayers);
+            batchBundles.add(new ShaderBatchBundle(rebuilt, layerTileSet));
+        }
+
+        if (maxSingleTiles < 1) {
+            return null;
+        }
+
+        // ── 收集每批瓦片需求 + 全局并集 ──
+        List<Set<Tile>> demandPerBatch = new ArrayList<>(batchBundles.size());
+        Set<Tile> allDemands = new HashSet<>();
+        for (ShaderBatchBundle batchBundle : batchBundles) {
+            Set<Tile> demand = new HashSet<>();
+            for (ShaderLayerTileRef layerTileRef : batchBundle.tileSet.layerTileRefs) {
+                demand.add(layerTileRef.tile);
+            }
+            demandPerBatch.add(demand);
+            allDemands.addAll(demand);
+        }
+
+        // ── 确保 atlas 有足够空闲槽位 ──
+        int needTiles = Math.min(minSingleDrawnTiles, maxSingleTiles);
+
+        // 第一轮：全局保留所有批次的瓦片
+        int ensured = page.ensureSlotsKeep(needTiles, allDemands);
+
+        // 逆序降级：从最后一批开始，逐批解除保留
+        if (ensured < needTiles) {
+            // 满足需求，或者仅仅剩下一个批次
+            for (int b = demandPerBatch.size() - 1; b > 1 && ensured < needTiles; b--) {
+                allDemands.removeAll(demandPerBatch.get(b));
+                ensured = page.ensureSlotsKeep(needTiles, allDemands);
+            }
+        }
+
         GLAtlas[] atlases = page.getAtlases();
-        List<AtlasSlot> slots = new ArrayList<>(visibleSet.visible.size());
-        Map<AtlasSlot, TileRef> slotMap =
-                allocateSlots(visibleSet.visible, atlases, slots);
-
-
-        PackedBuffers packed = packBuffers(visibleSet, slots, atlases, grid);
-
-        TileBufferGroup group = new TileBufferGroup(
-                ShaderConstants.TEXTURE_UNIT_TILE_TABLE,
-                ShaderConstants.TEXTURE_UNIT_LAYER_TABLE,
-                ShaderConstants.TEXTURE_UNIT_INDEX_TABLE,
-                packed.offsets,
-                packed.counts,
-                packed.layerTable,
-                packed.layerEntryCount,
-                packed.tileTable,
-                packed.tileEntryCount,
-                packed.indexList,
-                packed.indexCount,
-                slotMap);
-
-        GLProgram program = programs.get(Blends.NORMAL);
-        GLTiledTextureLayout layout = atlases[0].getLayout();
-        Shader shader = new NormalShader(
-                program, group, viewWidth, viewHeight, layout);
-
+        GLTiledTextureLayout texTileLayout = atlases[0].getLayout();
+        // ── 每批：分配槽位 + 打包 + 构造 bundle ──
+        List<ShaderDraw> draws = new ArrayList<>(batchBundles.size());
         GLBindable[] bindables = new GLBindable[atlases.length];
         System.arraycopy(atlases, 0, bindables, 0, atlases.length);
 
-        TileBufferBundle bundle = new TileBufferBundle(shader, bindables);
+        GLBindable[] bindablesA = new GLBindable[atlases.length + 1];
+        System.arraycopy(atlases, 0, bindablesA, 0, atlases.length);
+        bindablesA[atlases.length] = fboA.getColorAttachment();
+
+        GLBindable[] bindablesB = new GLBindable[atlases.length + 1];
+        System.arraycopy(atlases, 0, bindablesB, 0, atlases.length);
+        bindablesB[atlases.length] = fboB.getColorAttachment();
+
+        for (ShaderBatchBundle batchBundle : batchBundles) {
+            Shader shader;
+            String shaderKey = batchBundle.bundle.getShaderKey();
+            ShaderLayerTileSet tileSet = batchBundle.tileSet;
+
+            List<ShaderLayerTileSet> tileSets = new ArrayList<>();
+            List<ShaderLayerTileRef> tiles = tileSet.layerTileRefs;
+            int tileCount = tiles.size();
+            if (tileCount < 1){
+                continue;
+            }
+            if (tileCount <= ensured
+                    // 无空闲瓦片，就只能全清，全划分了，虽然不太可能
+                    || ensured == 0){
+                tileSets.add(tileSet);
+            }else {
+                // 批次划分，总是用尽确保的容量
+                ArrayList<ShaderLayerTileRef> tileRefs = new ArrayList<>(ensured);
+                int preBatch = 0;
+                int uploaded = 0;
+                for (int idx = 0; idx < tileCount; idx++) {
+                    if (tiles.get(idx).tile.queryData(GLTile.class) != null) {
+                        uploaded ++;
+                    }
+                    // 已经是gpu的的不占用批次
+                    int batch = (idx - uploaded) / ensured;
+                    if (batch > preBatch) {
+                        preBatch = batch;
+                        tileSets.add(tileSet.withRefs(tileRefs));
+                        tileRefs = new ArrayList<>();
+                    }
+
+                    tileRefs.add(tiles.get(idx));
+                }
+                // 一定会有残留批次
+                tileSets.add(tileSet.withRefs(tileRefs));
+            }
+
+
+            // Shader 构建 策略
+            for (ShaderLayerTileSet tilesToDraw : tileSets) {
+                GLBindable[] resolvedBundables;
+                ShaderFactoryContext factoryContext;
+
+                if (draws.isEmpty()){
+                    resolvedBundables = bindables;
+                } else {
+                    if (draws.size() % 2 == 1){
+                        resolvedBundables = bindablesA;
+                        TileProjector.projectLayerIntoFirst(fboALayer, dirtyList, tileSize, tilesToDraw);
+                    }else {
+                        resolvedBundables = bindablesB;
+                        TileProjector.projectLayerIntoFirst(fboBLayer, dirtyList, tileSize, tilesToDraw);
+                    }
+                }
+                factoryContext = new ShaderFactoryContext(tilesToDraw, viewTileInfo, resolvedBundables, context, texTileLayout);
+
+                if (Objects.equals(shaderKey, Blends.NORMAL)){
+                    shader = SimpleNormalFactory.INSTANCE.create(factoryContext);
+                }else {
+                    throw new IllegalArgumentException("shader keys must match");
+                }
+
+                draws.add(new ShaderDraw(shader, resolvedBundables));
+            }
+        }
 
         return CompositeRequest.of(context,
-                grid,
-                Collections.singletonList(bundle),
+                viewTileInfo,
+                draws,
                 page,
                 fboA, fboB);
     }
 
-    private static ViewportGrid buildViewGrid(List<Long> dirtyTiles,
+
+
+    // ═══════════════════════════════════════════════
+    // 后续方法不变
+    // ═══════════════════════════════════════════════
+
+    private static ViewTileInfo buildViewGrid(List<Long> dirtyTiles,
                                               int viewWidth, int viewHeight,
                                               int tileSize) {
         int[] tileXY = new int[dirtyTiles.size() * 2];
@@ -121,348 +232,13 @@ public final class CompositePlanner {
             tileXY[cursor++] = TiledCanvas.unpackTx(key);
             tileXY[cursor++] = TiledCanvas.unpackTy(key);
         }
-        return ViewportGrid.createPartial(
+        return ViewTileInfo.createPartial(
                 viewWidth, viewHeight, tileSize, tileXY);
     }
 
-    // ═══════════════════════════════════════════════
-    // 收集可见瓦片 + 精确分桶
-    // ═══════════════════════════════════════════════
 
-    private static VisibleSet collectVisibleTiles(
-            List<ILayer> layers, List<Long> dirtyTiles, int tileSize,
-            ViewportGrid view) {
 
-        Map<ILayer, Integer> layerEntryMap = new IdentityHashMap<>();
-        Map<VisibleKey, Integer> visibleIndex = new HashMap<>();
 
-        List<VisibleTile> visible = new ArrayList<>();
-        List<float[]> layerTable = new ArrayList<>();
-        Map<Long, List<Integer>> buckets = new HashMap<>();
-        int tilesPerColumn = view.getViewHeight() / tileSize;
-        for (ILayer layer : layers) {
-            if (!layer.isVisible()) continue;
-            TiledCanvas canvas = layer.getCanvas();
-            if (canvas == null) continue;
 
-            float alpha = layer.getOpacity();
-            float[] mat2d = layer.getTransform();
-            float[] inv = KMath.mat2dInv(mat2d);
-            if (inv == null) {
-                throw new IllegalStateException(
-                        "singular layer transform (det ≈ 0)");
-            }
-            for (Long dirtyKey : dirtyTiles) {
-                Set<Long> layerKeys = LayerUtils.transformTile(dirtyKey, tileSize, inv);
-                if (layerKeys == null || layerKeys.isEmpty()) continue;
 
-                for (Long layerKey : layerKeys) {
-                    int tx = TiledCanvas.unpackTx(layerKey);
-                    int ty = TiledCanvas.unpackTy(layerKey);
-                    Tile tile = canvas.getTile(tx, ty);
-                    if (tile == null) continue;
-
-                    VisibleKey vk = new VisibleKey(layer, layerKey);
-                    Integer idx = visibleIndex.get(vk);
-                    if (idx == null) {
-                        Integer lei = layerEntryMap.get(layer);
-                        if (lei == null) {
-                            lei = layerTable.size();
-                            layerEntryMap.put(layer, lei);
-
-                            layerTable.add(new float[]{
-                                    inv[0], inv[1], inv[2], inv[3],
-                                    inv[4], inv[5], alpha, 0f
-                            });
-                        }
-
-                        idx = visible.size();
-                        int glTileOriginX = tx * tileSize;
-                        int glTileOriginY = ty * tileSize;
-                        visible.add(new VisibleTile(canvas, tile, lei, glTileOriginX, glTileOriginY));
-                        visibleIndex.put(vk, idx);
-                    }
-
-                    buckets.computeIfAbsent(dirtyKey, k -> new ArrayList<>())
-                            .add(idx);
-                }
-            }
-        }
-
-        return new VisibleSet(visible, layerTable, buckets);
-    }
-
-    // ═══════════════════════════════════════════════
-    // 分配槽位
-    // ═══════════════════════════════════════════════
-
-    private static Map<AtlasSlot, TileRef> allocateSlots(
-            List<VisibleTile> visible, GLAtlas[] atlases,
-            List<AtlasSlot> slotsOut) {
-
-        Map<AtlasSlot, TileRef> map = new LinkedHashMap<>();
-        int atlasIdx = 0;
-        int slotIdx  = 0;
-        int placed   = 0;
-        int reused   = 0;
-
-        for (VisibleTile vt : visible) {
-            GLTileData existing = vt.tile.queryData(GLTileData.class);
-            if (existing != null) {
-                AtlasSlot slot = slotOf(existing, atlases, vt);
-                map.put(slot, new TileRef(vt.canvas, vt.tile));
-                slotsOut.add(slot);
-                reused++;
-                placed++;
-                continue;
-            }
-
-            AtlasSlot slot = null;
-            while (slot == null) {
-                if (atlasIdx >= atlases.length) {
-                    throw new IllegalStateException(
-                            "atlas capacity exceeded: need=" + visible.size()
-                                    + ", placed=" + placed
-                                    + ", reused=" + reused
-                                    + ", atlases=" + atlases.length
-                                    + ", stuck tile=" + vt.tile
-                                    + ", canvas=" + vt.canvas);
-                }
-                GLAtlas atlas = atlases[atlasIdx];
-                if (atlas == null) { atlasIdx++; slotIdx = 0; continue; }
-
-                GLTiledTextureLayout layout = atlas.getLayout();
-                int capacity = layout.getCapacity();
-                int perLayer = layout.getTilesPerLayer();
-                int perEdge  = layout.getTilesPerEdge();
-
-                while (slotIdx < capacity) {
-                    int idx   = slotIdx++;
-                    int layer = idx / perLayer;
-                    int local = idx % perLayer;
-                    int dataColumn   = local % perEdge;
-                    int dataRow   = local / perEdge;
-                    if (atlas.isOccupiedAt(layer, dataColumn, dataRow)) continue;
-                    slot = new AtlasSlot(atlasIdx, layer, dataRow, dataColumn);
-                    break;
-                }
-                if (slot == null) { atlasIdx++; slotIdx = 0; }
-            }
-            map.put(slot, new TileRef(vt.canvas, vt.tile));
-            slotsOut.add(slot);
-            placed++;
-        }
-
-        return map;
-    }
-
-    private static AtlasSlot slotOf(GLTileData data, GLAtlas[] atlases,
-                                    VisibleTile vt) {
-        GLAtlas owner = data.getAtlas();
-        int ownerIdx = -1;
-        for (int i = 0; i < atlases.length; i++) {
-            if (atlases[i] == owner) { ownerIdx = i; break; }
-        }
-        if (ownerIdx < 0) {
-            throw new IllegalStateException(
-                    "tile is bound to an atlas outside this page: "
-                            + owner +": " + vt.tile);
-        }
-        return new AtlasSlot(
-                ownerIdx,
-                data.getLayer(),
-                data.getDataRow(),
-                data.getDataColumn());
-    }
-
-    // ═══════════════════════════════════════════════
-    // 打包 buffer
-    // ═══════════════════════════════════════════════
-
-    private static PackedBuffers packBuffers(
-            VisibleSet visibleSet,
-            List<AtlasSlot> slots,
-            GLAtlas[] atlases,
-            ViewportGrid grid) {
-
-        List<VisibleTile> visible = visibleSet.visible;
-        List<float[]> layerEntries = visibleSet.layerTable;
-        Map<Long, List<Integer>> buckets = visibleSet.buckets;
-
-        int n = visible.size();
-        int screenTileCount = grid.getViewTileCount();
-
-        // ── layerTable ──
-        float[] layerTable = new float[layerEntries.size() * 8];
-        for (int i = 0; i < layerEntries.size(); i++) {
-            System.arraycopy(layerEntries.get(i), 0,
-                    layerTable, i * 8, 8);
-        }
-
-        // ── tileTable ──
-        float[] tileTable = new float[n * 8];
-        for (int i = 0; i < n; i++) {
-            VisibleTile vt = visible.get(i);
-
-            AtlasSlot slot = slots.get(i);
-            GLTiledTextureLayout layout =
-                    atlases[slot.getAtlasIndex()].getLayout();
-            int edge = layout.getTilesPerEdge();
-            float u0 = (float) slot.getDataColumn() / edge;
-            float v0 = (float) slot.getDataRow() / edge;
-
-            int base = i * 8;
-            tileTable[base]     = u0;
-            tileTable[base + 1] = v0;
-            tileTable[base + 2] = slot.getAtlasIndex();
-            tileTable[base + 3] = slot.getLayer();
-            tileTable[base + 4] = vt.glTileOriginX;
-            tileTable[base + 5] = vt.glTileOriginY;
-            tileTable[base + 6] = vt.layerTableIndex;
-            tileTable[base + 7] = 0f;
-        }
-
-        // ── grid + counts + indexList ──
-        int[] gridTileXY = grid.getTileXY();
-        int[] offsets = new int[screenTileCount];
-        int[] counts  = new int[screenTileCount];
-
-        int tileCount = 0;
-        for (int i = 0; i < screenTileCount; i++) {
-            int tileX = gridTileXY[i * 2];
-            int tileY = gridTileXY[i * 2 + 1];
-            List<Integer> b = buckets.get(TiledCanvas.pack(tileX, tileY));
-            int sz = b == null ? 0 : b.size();
-            counts[i] = sz;
-            tileCount += sz;
-        }
-
-        int[] indexList = new int[tileCount];
-        int cursor = 0;
-        for (int i = 0; i < screenTileCount; i++) {
-            offsets[i] = cursor;
-            int sx = gridTileXY[i * 2];
-            int sy = gridTileXY[i * 2 + 1];
-            List<Integer> bucket = buckets.get(TiledCanvas.pack(sx, sy));
-            if (bucket != null) {
-                for (int idx : bucket) {
-                    indexList[cursor++] = idx;
-                }
-            }
-        }
-
-        return new PackedBuffers(
-                layerTable, layerEntries.size(),
-                tileTable, n,
-                offsets, counts,
-                indexList, tileCount);
-    }
-
-    // ═══════════════════════════════════════════════
-    // 内部类型
-    // ═══════════════════════════════════════════════
-
-    private static final class VisibleSet {
-        final List<VisibleTile>        visible;
-        final List<float[]>            layerTable;
-        final Map<Long, List<Integer>> buckets;
-
-        VisibleSet(List<VisibleTile> visible,
-                   List<float[]> layerTable,
-                   Map<Long, List<Integer>> buckets) {
-            this.visible    = visible;
-            this.layerTable = layerTable;
-            this.buckets    = buckets;
-        }
-    }
-
-    private static final class VisibleKey {
-        final ILayer layer;
-        final long   tileKey;
-
-        VisibleKey(ILayer layer, long tileKey) {
-            this.layer   = layer;
-            this.tileKey = tileKey;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof VisibleKey)) return false;
-            VisibleKey that = (VisibleKey) o;
-            return tileKey == that.tileKey && layer == that.layer;
-        }
-
-        @Override
-        public int hashCode() {
-            return 31 * System.identityHashCode(layer) + Long.hashCode(tileKey);
-        }
-    }
-
-    private static final class VisibleTile {
-        final TiledCanvas canvas;
-        final Tile        tile;
-        final int         layerTableIndex;
-        final int glTileOriginX;
-        final int glTileOriginY;
-        VisibleTile(TiledCanvas canvas, Tile tile,
-                    int layerTableIndex, int glTileOriginX, int glTileOriginY) {
-            this.canvas          = canvas;
-            this.tile            = tile;
-            this.layerTableIndex = layerTableIndex;
-            this.glTileOriginX   = glTileOriginX;
-            this.glTileOriginY   = glTileOriginY;
-        }
-    }
-
-    private static final class PackedBuffers {
-        final float[] layerTable;
-        final int     layerEntryCount;
-        final float[] tileTable;
-        final int     tileEntryCount;
-        final int[]   offsets;
-        final int[]   counts;
-        final int[]   indexList;
-        final int     indexCount;
-
-        PackedBuffers(float[] layerTable, int layerEntryCount,
-                      float[] tileTable, int tileEntryCount,
-                      int[] offsets, int[] counts,
-                      int[] indexList, int indexCount) {
-            this.layerTable      = layerTable;
-            this.layerEntryCount = layerEntryCount;
-            this.tileTable       = tileTable;
-            this.tileEntryCount  = tileEntryCount;
-            this.offsets         = offsets;
-            this.counts          = counts;
-            this.indexList       = indexList;
-            this.indexCount      = indexCount;
-        }
-
-        @Override
-        public String toString() {
-            int nonEmpty = 0;
-            int maxCount = 0;
-            StringBuilder head = new StringBuilder();
-            for (int i = 0; i < counts.length; i++) {
-                if (counts[i] > 0) {
-                    nonEmpty++;
-                    if (head.length() < 80) {
-                        head.append(i).append(':').append(counts[i]).append(' ');
-                    }
-                }
-                if (counts[i] > maxCount) maxCount = counts[i];
-            }
-
-            return "PackedBuffers{"
-                    + "screenTiles=" + counts.length
-                    + ", nonEmpty=" + nonEmpty
-                    + ", maxCount=" + maxCount
-                    + ", totalIndices=" + indexCount
-                    + ", tileEntries=" + tileEntryCount
-                    + ", layerEntries=" + layerEntryCount
-                    + ", firstCounts=[" + head.toString().trim() + "]"
-                    + "}";
-        }
-    }
 }

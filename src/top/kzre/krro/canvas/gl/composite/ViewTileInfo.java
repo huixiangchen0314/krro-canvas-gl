@@ -42,7 +42,7 @@ import java.util.Arrays;
  * <p>纯数据，任意线程可构造和读取。{@link #getTileXY()} 返回内部
  * 数组引用，调用方不得修改。
  */
-public final class ViewportGrid {
+public final class ViewTileInfo {
 
     /** 视口宽度（像素）。 */
     private final int viewWidth;
@@ -68,7 +68,7 @@ public final class ViewportGrid {
      * @param viewTileCount 屏幕瓦片总数，必须 &ge; 0
      * @throws IllegalArgumentException 参数非法
      */
-    public ViewportGrid(int viewWidth, int viewHeight, int tileSize,
+    public ViewTileInfo(int viewWidth, int viewHeight, int tileSize,
                         int[] tileXY, int viewTileCount) {
         if (viewWidth <= 0) {
             throw new IllegalArgumentException("viewWidth must be > 0: " + viewWidth);
@@ -107,7 +107,7 @@ public final class ViewportGrid {
      * @throws IllegalArgumentException viewWidth / viewHeight / tileSize
      *                                  任一非正
      */
-    public static ViewportGrid createFull(int viewWidth, int viewHeight, int tileSize) {
+    public static ViewTileInfo createFull(int viewWidth, int viewHeight, int tileSize) {
         if (viewWidth <= 0 || viewHeight <= 0 || tileSize <= 0) {
             throw new IllegalArgumentException(
                     "viewWidth/viewHeight/tileSize must be > 0");
@@ -124,11 +124,11 @@ public final class ViewportGrid {
                 tileXY[idx++] = ty;
             }
         }
-        return new ViewportGrid(viewWidth, viewHeight, tileSize, tileXY, count);
+        return new ViewTileInfo(viewWidth, viewHeight, tileSize, tileXY, count);
     }
 
-    public static ViewportGrid createPartial(int viewWidth, int viewHeight, int tileSize, int[] tileXY) {
-        return new ViewportGrid(viewWidth, viewHeight, tileSize, tileXY, tileXY.length / 2);
+    public static ViewTileInfo createPartial(int viewWidth, int viewHeight, int tileSize, int[] tileXY) {
+        return new ViewTileInfo(viewWidth, viewHeight, tileSize, tileXY, tileXY.length / 2);
     }
 
     // ═══════════════════════════════════════════════

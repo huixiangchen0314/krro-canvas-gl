@@ -46,13 +46,29 @@ public final class TileRef {
      *
      * <p><b>线程契约</b>：必须在 GL 线程上调用。
      */
-    public void pageOut(){
-        GLAtlas.GLTileDataImpl.pageOut(tile);
+    public boolean pageOut(){
+       return GLAtlas.GLTileDataImpl.pageOut(tile);
     }
+
 
     @Override
     public String toString() {
         return "TileRef{canvas=" + System.identityHashCode(canvas)
                 + ", tx=" + getTx() + ", ty=" + getTy() + "}";
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof TileRef)) return false;
+        TileRef other = (TileRef) o;
+        return this.canvas == other.canvas && this.tile == other.tile;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = System.identityHashCode(canvas);
+        result = 31 * result + System.identityHashCode(tile);
+        return result;
     }
 }

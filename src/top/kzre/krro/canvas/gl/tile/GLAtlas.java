@@ -3,6 +3,7 @@ package top.kzre.krro.canvas.gl.tile;
 import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.UploadableTile;
 import top.kzre.krro.canvas.gl.resource.*;
+import top.kzre.krro.canvas.gl.util.BufferUtils;
 import top.kzre.krro.util.tile.*;
 
 import java.nio.ByteBuffer;
@@ -529,6 +530,7 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         int getLayer();
         int getDataColumn();
         int getDataRow();
+        boolean isDirty();
     }
 
     /**
@@ -588,12 +590,16 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
          *
          * @param tile 目标瓦片，可为 null
          */
-        public static void pageOut(Tile tile) {
-            if (tile == null) return;
+        public static boolean pageOut(Tile tile) {
+            if (tile == null) return false;
             GLTileDataImpl gl = tile.queryData(GLTileDataImpl.class);
-            if (gl == null) return;
+            if (gl == null) return false;
+            if (gl.proxyRefCount.get() != 1) {
+                throw new IllegalStateException("pageOut should called when tile exclusively hold tileData gl proxy");
+            }
             tile.replaceData(gl.peer);
-            gl.handle.close();
+
+            return true;
         }
 
         @Override
@@ -647,7 +653,6 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
             return c;
         }
 
-        // TODO 更加详细考虑
         @Override
         public int release() {
 
@@ -710,6 +715,11 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         @Override
         public int getDataRow() {
             return handle.getDataRow();
+        }
+
+        @Override
+        public boolean isDirty() {
+            return dirty.get();
         }
 
         @Override

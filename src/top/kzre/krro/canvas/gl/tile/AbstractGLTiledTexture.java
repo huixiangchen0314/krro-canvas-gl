@@ -186,6 +186,10 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
     /** 能查询 owner 的能力接口。 */
     public interface GLTextureTileData {
         AbstractGLTiledTexture getOwner();
+        GLTexture getTexture();
+        int getLayer();
+        int getRow();
+        int getColumn();
     }
 
     /**
@@ -247,6 +251,26 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
 
         @Override
         public AbstractGLTiledTexture getOwner() { return owner; }
+
+        @Override
+        public GLTexture getTexture() {
+            return owner.texture;
+        }
+
+        @Override
+        public int getLayer() {
+            return layer;
+        }
+
+        @Override
+        public int getRow() {
+            return glRow();
+        }
+
+        @Override
+        public int getColumn() {
+            return canvasColumn;
+        }
 
         @Override
         public GLTileDescriptor getDescriptor() {

@@ -18,12 +18,12 @@ import top.kzre.krro.canvas.gl.resource.GLBindable;
  *
  * <p><b>线程契约</b>：纯数据，任意线程可构造和读取。
  */
-public final class TileBufferBundle {
+public final class ShaderDraw {
 
-    private final Shader       shader;
+    private final Shader shader;
     private final GLBindable[] bindables;
 
-    public TileBufferBundle(Shader shader, GLBindable[] bindables) {
+    public ShaderDraw(Shader shader, GLBindable[] bindables) {
         if (shader == null) {
             throw new IllegalArgumentException("shader must not be null");
         }

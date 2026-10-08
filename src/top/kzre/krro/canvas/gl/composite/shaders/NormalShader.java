@@ -77,7 +77,7 @@ public final class NormalShader extends AbstractShader {
     // ═══════════════════════════════════════════════
 
     @Override
-    public List<TileBufferGroup> tiles() {
+    public List<TileBufferGroup> tileGroups() {
         return Collections.singletonList(group);
     }
 

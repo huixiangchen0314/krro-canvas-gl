@@ -25,6 +25,7 @@ public final class WrapLayer extends LayerBase {
         super(id, canvas, transform, visible, opacity, blendMode);
     }
 
+
     @Override
     public void close() {
 

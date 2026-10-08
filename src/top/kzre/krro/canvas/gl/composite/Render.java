@@ -1,8 +1,6 @@
 package top.kzre.krro.canvas.gl.composite;
 
-import top.kzre.colorutils.color.RGB;
 import top.kzre.krro.canvas.gl.resource.*;
-import top.kzre.krro.canvas.gl.tile.GLTiledTextureLayer;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.TiledCanvas;
 
@@ -75,11 +73,16 @@ public final class Render {
                 .thenCompose(pair -> {
                     GLFramebuffer fboA = pair[0];
                     GLFramebuffer fboB = pair[1];
-
-                    CompositeRequest request = CompositePlanner.plan(
-                            layers, ctx,
-                            fboA, fboB, dirtyTiles);
-
+                    CompositeRequest request = null;
+                    try{
+                        request = CompositePlanner.plan(
+                               layers, ctx,
+                               fboA, fboB, dirtyTiles);
+                   }catch (Throwable t){
+                        fboPool.release(fboA);
+                        fboPool.release(fboB);
+                        throw t;
+                    }
                     if (request == null) {
                         fboPool.release(fboA);
                         fboPool.release(fboB);
@@ -91,8 +94,8 @@ public final class Render {
                             .thenCompose(resultFbo ->{
                                 GLFramebuffer other = (resultFbo == fboA) ? fboB : fboA;
                                 fboPool.release(other);
-                                TiledCanvas canvas = wrapResultCanvas(fboPool, glExecutor, resultFbo, tileSize);
-
+                                TiledCanvas canvas = FBOUtils.asCanvas(resultFbo, fboPool, glExecutor, tileSize);
+                                canvas.keepTiles(dirtyTiles);
                                 return CompletableFuture.completedFuture(canvas);
                             });
                 });
@@ -116,32 +119,12 @@ public final class Render {
 
     private static CompletableFuture<GLFramebuffer[]> glAcquireFboPair(
             FixedSizeFrameBufferPool pool, SerialExecutor executor) {
-        if (pool.getIdleCount() >= 2) {
+        if (pool.countSlotsWithIdleAtLeast(1) >= 2) {
             return CompletableFuture.completedFuture(
-                    new GLFramebuffer[]{ pool.acquire(), pool.acquire() });
+                   pool.acquire2());
         }
 
-        return executor.submit(() ->
-                new GLFramebuffer[]{ pool.acquire(), pool.acquire() });
+        return executor.submit(pool::acquire2);
     }
 
-
-    private static TiledCanvas wrapResultCanvas(
-            FixedSizeFrameBufferPool pool,
-            SerialExecutor glExecutor,
-            GLFramebuffer fbo,
-            int tileSize) {
-
-        GLTexture tex   = fbo.getColorAttachment();
-        int layer = fbo.getLayer();
-
-        GLTiledTextureLayer view = new GLTiledTextureLayer(
-                tex, tileSize,
-                layer, 1,
-                glExecutor,
-                () -> pool.release(fbo)
-        );
-
-        return view.asCanvas();
-    }
 }
