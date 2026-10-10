@@ -2,7 +2,10 @@ package top.kzre.krro.canvas.gl.composite.shaders;
 
 import top.kzre.krro.canvas.gl.composite.AbstractShader;
 import top.kzre.krro.canvas.gl.composite.TileBufferGroup;
+import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLProgram;
+import top.kzre.krro.canvas.gl.resource.GLTexture;
+import top.kzre.krro.canvas.gl.tile.GLAtlas;
 import top.kzre.krro.canvas.gl.tile.GLTiledTextureLayout;
 
 import java.util.Collections;
@@ -31,7 +34,6 @@ import java.util.List;
  * atlas 是 CPU 侧的资源组织方式，不在 shader 的语义里。
  */
 public final class NormalShader extends AbstractShader {
-
     /** 单 group 的实例 attribute location。 */
     private static final int INSTANCE_LOCATION = 1;
 
@@ -41,19 +43,20 @@ public final class NormalShader extends AbstractShader {
     private final TileBufferGroup     group;
     private final int                 viewWidth;
     private final int                 viewHeight;
-    private final GLTiledTextureLayout layout;
-
+    private final GLBindable[] bindables;
+    private final int tileSize;
     /**
      * @param program    已编译的 GLProgram
      * @param group      本 shader 使用的瓦片数据
      * @param viewWidth  视口宽（像素，已对齐到 tileSize 倍数）
      * @param viewHeight 视口高（像素，已对齐到 tileSize 倍数）
-     * @param layout     纹理布局，提供 tileSize / texLayerSize
+     * @param bindables     纹理布局，提供 tileSize / texLayerSize
      */
     public NormalShader(GLProgram program,
                         TileBufferGroup group,
                         int viewWidth, int viewHeight,
-                        GLTiledTextureLayout layout) {
+                        int tileSize,
+                        GLBindable[] bindables) {
         super(program);
         if (group == null) {
             throw new IllegalArgumentException("group must not be null");
@@ -62,14 +65,15 @@ public final class NormalShader extends AbstractShader {
             throw new IllegalArgumentException(
                     "invalid viewport: " + viewWidth + "x" + viewHeight);
         }
-        if (layout == null) {
+        if (bindables == null) {
             throw new IllegalArgumentException("layout must not be null");
         }
 
         this.group      = group;
         this.viewWidth  = viewWidth;
         this.viewHeight = viewHeight;
-        this.layout     = layout;
+        this.tileSize = tileSize;
+        this.bindables = bindables;
     }
 
     // ═══════════════════════════════════════════════
@@ -93,24 +97,44 @@ public final class NormalShader extends AbstractShader {
     protected void configure() {
         GLProgram p = getProgram();
 
-        int tileSize = layout.getTileSize();
-        int tilesPerEdge = layout.getTilesPerEdge();
-        float tileScale = 1.0f / tilesPerEdge;
-
         // ── 几何参数 ──
         p.setVec2IfPresent("uViewport", viewWidth, viewHeight);
         p.setFloatIfPresent("uTileSize", tileSize);
-        p.setFloatIfPresent("uTileScale", tileScale);
+
 
         // ── 本 group 的三张 buffer 表 ──
         p.setIntIfPresent("uTileTable",  group.getTileTableUnit());
         p.setIntIfPresent("uLayerTable", group.getLayerTableUnit());
         p.setIntIfPresent("uIndexTable", group.getIndexTableUnit());
 
-        // ── 纹理采样器 —— 固定指向 unit 0..3 ──
-        p.setIntIfPresent("uTexture0", 0);
-        p.setIntIfPresent("uTexture1", 1);
-        p.setIntIfPresent("uTexture2", 2);
-        p.setIntIfPresent("uTexture3", 3);
+        // ── 纹理采样器 ──
+        for (int i = 0; i < TEXTURE_SLOTS; i++) {
+            p.setIntIfPresent("uTexture" + i, i);
+        }
+
+
+        float[] scales = new float[TEXTURE_SLOTS * 2];   // 8 * 2
+
+        for (int i = 0; i < bindables.length; i++) {
+            GLBindable b = bindables[i];
+            int edgeU, edgeV;
+            if (b instanceof GLAtlas) {
+                GLAtlas atlas = (GLAtlas) b;
+                int e = atlas.getLayout().getTilesPerEdge();
+                edgeU = edgeV = e;
+            } else if (b instanceof GLTexture) {
+                // FBO 颜色附件——纹理尺寸等于视口像素尺寸，网格按 tileSize 划分。
+                // 非正方形视口下 edgeU ≠ edgeV，必须各算各的。
+                edgeU = Math.max(1, (viewWidth  + tileSize - 1) / tileSize);
+                edgeV = Math.max(1, (viewHeight + tileSize - 1) / tileSize);
+            } else {
+                throw new IllegalStateException(
+                        "unsupported bindable at unit " + i + ": " + b);
+            }
+            scales[i * 2]     = 1.0f / edgeU;
+            scales[i * 2 + 1] = 1.0f / edgeV;
+        }
+
+        p.setVec2Array("uTextureScales", scales);
     }
 }

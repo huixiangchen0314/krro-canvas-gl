@@ -11,29 +11,41 @@ import java.util.Map;
 import java.util.Set;
 
 public final class TileProjector {
-    private TileProjector(){}
+    private TileProjector() {}
+
+    // ═══════════════════════════════════════════════
+    // 追加语义
+    // ═══════════════════════════════════════════════
 
     public static ShaderLayerTileSet projectLayersInto(
             List<ILayer> layers,
             List<Long> dirtyTiles,
             int tileSize,
             ShaderLayerTileSet out) {
-
-//        int tilesPerColumn = view.getViewHeight() / tileSize;
         for (ILayer layer : layers) {
             projectLayerInto(layer, dirtyTiles, tileSize, out);
         }
         return out;
     }
 
-    public static ShaderLayerTileSet projectLayerInto(ILayer layer, List<Long> dirtyTiles, int tileSize, ShaderLayerTileSet out) {
+    public static ShaderLayerTileSet projectLayerInto(
+            ILayer layer, List<Long> dirtyTiles, int tileSize, ShaderLayerTileSet out) {
+
         if (!layer.isVisible()) return out;
 
         float[] mat2d = layer.getTransform();
+
+        // 快速路径：标准变换——屏幕瓦片 = 图层瓦片，跳过求逆与 AABB 投影。
+        if (KMath.mat2dIsIdentity(mat2d)) {
+            for (Long dirtyKey : dirtyTiles) {
+                projectTileIdentityInto(layer, dirtyKey, out);
+            }
+            return out;
+        }
+
         float[] inv = KMath.mat2dInv(mat2d);
         if (inv == null) {
-            throw new IllegalStateException(
-                    "singular layer transform (det ≈ 0)");
+            throw new IllegalStateException("singular layer transform (det ≈ 0)");
         }
         for (Long dirtyKey : dirtyTiles) {
             projectTileInto(layer, dirtyKey, tileSize, inv, out);
@@ -41,21 +53,62 @@ public final class TileProjector {
         return out;
     }
 
+    /** identity transform：dirtyKey 直接就是 layerKey，不需要 transformTile。 */
+    private static void projectTileIdentityInto(
+            ILayer layer, Long dirtyKey, ShaderLayerTileSet out) {
 
+        TiledCanvas canvas = layer.getCanvas();
+        if (canvas == null) return;
 
-    private static void projectTileInto(ILayer layer, Long dirtyKey, int tileSize, float[] inv,
-                                       ShaderLayerTileSet out) {
+        int tx = TiledCanvas.unpackTx(dirtyKey);
+        int ty = TiledCanvas.unpackTy(dirtyKey);
+        Tile tile = canvas.getTile(tx, ty);
+        if (tile == null) return;
+
+        Map<ShaderLayerTileKey, ShaderLayerTileRef> layerTileIndex = out.layerTileIndex;
+        Map<ILayer, Integer> layerIndex = out.layerIndex;
+        List<float[]> layerTable = out.layerTable;
+        List<ShaderLayerTileRef> layerTileRefs = out.layerTileRefs;
+
+        ShaderLayerTileKey key = ShaderLayerTileKey.of(layer, dirtyKey);
+        ShaderLayerTileRef ref = layerTileIndex.get(key);
+        if (ref == null) {
+            Integer li = layerIndex.get(layer);
+            if (li == null) {
+                li = layerTable.size();
+                layerIndex.put(layer, li);
+                layerTable.add(new float[]{
+                        1f, 0f, 0f, 1f, 0f, 0f, layer.getOpacity(), 0f
+                });
+            }
+            ref = new ShaderLayerTileRef(canvas, tile, li);
+            layerTileRefs.add(ref);
+            layerTileIndex.put(key, ref);
+        }
+
+        out.porjectTilesMap.computeIfAbsent(dirtyKey, k -> new ArrayList<>())
+                .add(ref);
+    }
+
+    private static void projectTileInto(
+            ILayer layer, Long dirtyKey, int tileSize, float[] inv,
+            ShaderLayerTileSet out) {
+
         TiledCanvas canvas = layer.getCanvas();
         if (canvas == null) return;
 
         Set<Long> layerKeys = LayerUtils.transformTile(dirtyKey, tileSize, inv);
         if (layerKeys == null || layerKeys.isEmpty()) return;
 
-        Map<ShaderLayerTileKey, Integer> layerTileIndex = out.layerTileIndex;
-        Map<ILayer, Integer> layerIndex = out.layerIndex;
-        List<float[]> layerTable = out.layerTable;
-        Map<Long, List<Integer>> porjectTilesMap = out.porjectTilesMap;
-        List<ShaderLayerTileRef> layerTileRefs = out.layerTileRefs;
+        Map<ShaderLayerTileKey, ShaderLayerTileRef> layerTileIndex = out.layerTileIndex;
+        Map<ILayer, Integer> layerIndex          = out.layerIndex;
+        List<float[]> layerTable                 = out.layerTable;
+        Map<Long, List<ShaderLayerTileRef>> porjectTilesMap = out.porjectTilesMap;
+        List<ShaderLayerTileRef> layerTileRefs   = out.layerTileRefs;
+
+        List<ShaderLayerTileRef> bucket = porjectTilesMap.computeIfAbsent(
+                dirtyKey, k -> new ArrayList<>());
+
         for (Long layerKey : layerKeys) {
             int tx = TiledCanvas.unpackTx(layerKey);
             int ty = TiledCanvas.unpackTy(layerKey);
@@ -63,30 +116,29 @@ public final class TileProjector {
             if (tile == null) continue;
 
             ShaderLayerTileKey projectedTileKey = ShaderLayerTileKey.of(layer, layerKey);
-            Integer idx = layerTileIndex.get(projectedTileKey);
-            if (idx == null) {
+            ShaderLayerTileRef ref = layerTileIndex.get(projectedTileKey);
+            if (ref == null) {
                 Integer li = layerIndex.get(layer);
                 if (li == null) {
                     li = layerTable.size();
                     layerIndex.put(layer, li);
-
                     layerTable.add(new float[]{
                             inv[0], inv[1], inv[2], inv[3],
                             inv[4], inv[5], layer.getOpacity(), 0f
                     });
                 }
-
-                idx = layerTileRefs.size();
-                int glTileOriginX = tx * tileSize;
-                int glTileOriginY = ty * tileSize;
-                layerTileRefs.add(new ShaderLayerTileRef(canvas, tile, li, glTileOriginX, glTileOriginY));
-                layerTileIndex.put(projectedTileKey, idx);
+                ref = new ShaderLayerTileRef(canvas, tile, li);
+                layerTileRefs.add(ref);
+                layerTileIndex.put(projectedTileKey, ref);
             }
 
-            porjectTilesMap.computeIfAbsent(dirtyKey, k -> new ArrayList<>())
-                    .add(idx);
+            bucket.add(ref);
         }
     }
+
+    // ═══════════════════════════════════════════════
+    // 前插语义（backdrop）
+    // ═══════════════════════════════════════════════
 
     public static ShaderLayerTileSet projectLayerIntoFirst(
             ILayer layer, List<Long> dirtyTiles, int tileSize, ShaderLayerTileSet out) {
@@ -94,15 +146,65 @@ public final class TileProjector {
         if (!layer.isVisible()) return out;
 
         float[] mat2d = layer.getTransform();
+
+        // 快速路径：标准变换——屏幕瓦片 = 图层瓦片，跳过求逆与 AABB 投影。
+        if (KMath.mat2dIsIdentity(mat2d)) {
+            for (int i = dirtyTiles.size() - 1; i >= 0; i--) {
+                projectTileIdentityFirst(layer, dirtyTiles.get(i), out);
+            }
+            return out;
+        }
+
         float[] inv = KMath.mat2dInv(mat2d);
         if (inv == null) {
-            throw new IllegalStateException(
-                    "singular layer transform (det ≈ 0)");
+            throw new IllegalStateException("singular layer transform (det ≈ 0)");
         }
-        for (Long dirtyKey : dirtyTiles) {
-            projectTileIntoFirst(layer, dirtyKey, tileSize, inv, out);
+        for (int i = dirtyTiles.size() - 1; i >= 0; i--) {
+            projectTileIntoFirst(layer, dirtyTiles.get(i), tileSize, inv, out);
         }
         return out;
+    }
+
+    /**
+     * identity transform 下的 backdrop 前插。
+     *
+     * <p>屏幕瓦片与图层瓦片一一对应：dirtyKey 直接就是 layerKey。
+     * 每个 dirtyKey 恰好贡献一个 ref——不存在"一块屏幕瓦片对应多个
+     * 图层瓦片"的情形，因此这里用单次头插，不涉及 {@code newRefs}
+     * 列表的构造。
+     */
+    private static void projectTileIdentityFirst(
+            ILayer layer, Long dirtyKey, ShaderLayerTileSet out) {
+
+        TiledCanvas canvas = layer.getCanvas();
+        if (canvas == null) return;
+
+        int tx = TiledCanvas.unpackTx(dirtyKey);
+        int ty = TiledCanvas.unpackTy(dirtyKey);
+        Tile tile = canvas.getTile(tx, ty);
+        if (tile == null) return;
+
+        List<ShaderLayerTileRef> layerTileRefs = out.layerTileRefs;
+        List<float[]> layerTable = out.layerTable;
+        Map<ILayer, Integer> layerIndex = out.layerIndex;
+        Map<Long, List<ShaderLayerTileRef>> porjectTilesMap = out.porjectTilesMap;
+
+        Integer li = layerIndex.get(layer);
+        if (li == null) {
+            li = layerTable.size();
+            layerIndex.put(layer, li);
+            layerTable.add(new float[]{
+                    1f, 0f, 0f, 1f, 0f, 0f, layer.getOpacity(), 0f
+            });
+        }
+        final int layerTableIdx = li;
+
+        ShaderLayerTileRef ref = new ShaderLayerTileRef(canvas, tile, layerTableIdx);
+
+        // 逆序遍历调用方 + 单次头插 = 最终顺序与 dirtyTiles 正序一致。
+        layerTileRefs.add(0, ref);
+        porjectTilesMap.computeIfAbsent(dirtyKey, k -> new ArrayList<>())
+                .add(0, ref);
     }
 
     private static void projectTileIntoFirst(
@@ -117,8 +219,20 @@ public final class TileProjector {
 
         List<ShaderLayerTileRef> layerTileRefs = out.layerTileRefs;
         List<float[]> layerTable = out.layerTable;
+        Map<ILayer, Integer> layerIndex = out.layerIndex;
+        Map<Long, List<ShaderLayerTileRef>> porjectTilesMap = out.porjectTilesMap;
 
-        // 1. 先为本 dirty tile 收集本图层要贡献的 ref（尚不知最终 idx）
+        Integer li = layerIndex.get(layer);
+        if (li == null) {
+            li = layerTable.size();
+            layerIndex.put(layer, li);
+            layerTable.add(new float[]{
+                    inv[0], inv[1], inv[2], inv[3],
+                    inv[4], inv[5], layer.getOpacity(), 0f
+            });
+        }
+        final int layerTableIdx = li;
+
         List<ShaderLayerTileRef> newRefs = new ArrayList<>(layerKeys.size());
         for (Long layerKey : layerKeys) {
             int tx = TiledCanvas.unpackTx(layerKey);
@@ -126,33 +240,13 @@ public final class TileProjector {
             Tile tile = canvas.getTile(tx, ty);
             if (tile == null) continue;
 
-            // backdrop 每 dirty tile 一份，直接为它分配独立的 layerTable 槽位
-            int li = layerTable.size();
-            layerTable.add(new float[]{
-                    inv[0], inv[1], inv[2], inv[3],
-                    inv[4], inv[5], layer.getOpacity(), 0f
-            });
-            newRefs.add(new ShaderLayerTileRef(canvas, tile, li,
-                    tx * tileSize, ty * tileSize));
+            newRefs.add(new ShaderLayerTileRef(canvas, tile, layerTableIdx));
         }
 
         if (newRefs.isEmpty()) return;
 
-        int shift = newRefs.size();
-
-        // 2. 已有 ref 全体后移——索引是位置，位置变了，桶里旧的 idx 也必须跟着移
-        layerTileRefs.addAll(0, newRefs);  // 前插（ArrayList 会整体搬移，O(n)，可接受）
-
-        // 3. 所有旧桶里的 idx 整体 +shift
-        for (List<Integer> bucket : out.porjectTilesMap.values()) {
-            bucket.replaceAll(integer -> integer + shift);
-        }
-
-        // 4. backdrop 自己的 idx = 0..shift-1，前插到本 dirtyKey 桶的头部
-        List<Integer> prepend = new ArrayList<>(shift);
-        for (int i = 0; i < shift; i++) prepend.add(i);
-
-        out.porjectTilesMap.computeIfAbsent(dirtyKey, k -> new ArrayList<>())
-                .addAll(0, prepend);
+        layerTileRefs.addAll(0, newRefs);
+        porjectTilesMap.computeIfAbsent(dirtyKey, k -> new ArrayList<>())
+                .addAll(0, newRefs);
     }
 }

@@ -114,7 +114,7 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
 
     @Override
     public boolean allocateAt(TextureTileSlot slot, TileRef ref) {
-        int idx  = slot.getAtlasIndex();
+        int idx  = slot.getUnit();
         GLAtlas atlas = atlases[idx];
         if (atlas == null) {
             throw new IllegalArgumentException("No atlas with idx  " + idx );

@@ -64,7 +64,7 @@ public interface AtlasPoolPage {
 
     /**
      * 本页涉及的全部 atlas。数组下标即 atlasIndex，
-     * 也是 {@link TextureTileSlot#getAtlasIndex()} 和 bundle 的
+     * 也是 {@link TextureTileSlot#getUnit()} 和 bundle 的
      * {@code bindables} 下标。
      *
      * <p>null 位置表示该下标没有 atlas——规划阶段跳过。

@@ -13,8 +13,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-public final class SimpleNormalFactory extends BaseFactory {
-    public static final BaseFactory INSTANCE = new SimpleNormalFactory();
+public final class SimpleNormalShaderFactory extends BaseShaderFactory {
+    public static final BaseShaderFactory INSTANCE = new SimpleNormalShaderFactory();
 
     @Override
     public Shader create(ShaderFactoryContext context) {
@@ -22,7 +22,7 @@ public final class SimpleNormalFactory extends BaseFactory {
         GLCompositeContext compositeContext = context.getContext();
         ViewTileInfo grid = context.getGrid();
         ShaderLayerTileSet tileSet = context.getTileSet();
-        GLTiledTextureLayout texTileLayout = context.getTextureLayout();
+        int tileSize = context.getContext().getTileSize();
         GLProgramCache programs = compositeContext.getProgramCache();
 
         int viewWidth = compositeContext.getViewWidth();
@@ -31,7 +31,7 @@ public final class SimpleNormalFactory extends BaseFactory {
         List<TextureTileSlot> slots = new ArrayList<>(tileSet.layerTileRefs.size());
         Map<TextureTileSlot, TileRef> slotMap = allocateSlots(tileSet.layerTileRefs, bindables, slots);
 
-        ShaderPackedBuffer packed = packBuffers(tileSet, slots, texTileLayout, grid);
+        ShaderPackedBuffer packed = packBuffers(tileSet, slots, bindables, grid);
 
         TileBufferGroup group = new TileBufferGroup(
                 ShaderConstants.TEXTURE_UNIT_TILE_TABLE,
@@ -50,6 +50,6 @@ public final class SimpleNormalFactory extends BaseFactory {
 
         GLProgram program = programs.get(Blends.NORMAL);
         return new NormalShader(
-                program, group, viewWidth, viewHeight, texTileLayout);
+                program, group, viewWidth, viewHeight, tileSize, bindables);
     }
 }

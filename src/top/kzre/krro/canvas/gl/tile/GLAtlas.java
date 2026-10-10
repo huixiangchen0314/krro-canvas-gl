@@ -690,7 +690,10 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
                 PixelCodec.pack(fmt, slice, pixelCount, tmp);
 
                 tmp.flip();
-
+                // 行序翻转，转gl座标系，y向上
+                BufferUtils.flipRows(
+                        tmp, tileSize,
+                        tileSize * fmt.internalBytesPerPixel());
                 handle.upload(tmp);
             } finally {
                 MemoryUtil.memFree(tmp);

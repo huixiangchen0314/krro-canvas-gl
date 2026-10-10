@@ -73,7 +73,7 @@ public final class Render {
                 .thenCompose(pair -> {
                     GLFramebuffer fboA = pair[0];
                     GLFramebuffer fboB = pair[1];
-                    CompositeRequest request = null;
+                    CompositeRequest request;
                     try{
                         request = CompositePlanner.plan(
                                layers, ctx,

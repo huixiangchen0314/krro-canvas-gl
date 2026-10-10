@@ -64,7 +64,7 @@ public final class SlottedTileFactory implements TileFactory {
         }
 
         TextureTileSlot slot  = slotOf.apply(tx, ty);
-        GLAtlas  atlas = atlases[slot.getAtlasIndex()];
+        GLAtlas  atlas = atlases[slot.getUnit()];
         GLTileDataImpl gl = atlas.allocateAt(
                 slot.getLayer(), slot.getDataColumn(), slot.getDataRow(), data);
         return new DefaultTile(tx, ty, gl);

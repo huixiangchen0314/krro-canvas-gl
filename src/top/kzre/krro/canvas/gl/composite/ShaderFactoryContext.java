@@ -1,22 +1,19 @@
 package top.kzre.krro.canvas.gl.composite;
 
 import top.kzre.krro.canvas.gl.resource.GLBindable;
-import top.kzre.krro.canvas.gl.tile.GLTiledTextureLayout;
 
 public final class ShaderFactoryContext {
     private final ShaderLayerTileSet tileSet;
     private final ViewTileInfo grid;
     private final GLBindable[] bindables;
     private final GLCompositeContext context;
-    private final GLTiledTextureLayout textureLayout;
 
 
-    public ShaderFactoryContext(ShaderLayerTileSet tileSet, ViewTileInfo grid, GLBindable[] bindables, GLCompositeContext context, GLTiledTextureLayout textureLayout) {
+    public ShaderFactoryContext(ShaderLayerTileSet tileSet, ViewTileInfo grid, GLBindable[] bindables, GLCompositeContext context) {
         this.tileSet = tileSet;
         this.grid = grid;
         this.bindables = bindables;
         this.context = context;
-        this.textureLayout = textureLayout;
 
     }
 
@@ -36,7 +33,4 @@ public final class ShaderFactoryContext {
         return context;
     }
 
-    public GLTiledTextureLayout getTextureLayout() {
-        return textureLayout;
-    }
 }

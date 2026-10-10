@@ -37,8 +37,10 @@ package top.kzre.krro.canvas.gl.tile;
  * <p><b>线程契约</b>：纯数据，无 GL 副作用，任意线程可构造和读取。
  */
 public final class TextureTileSlot {
-    /** atlas 在 AtlasPoolPage 中的下标。不是 GL 纹理单元。 */
-    private final int atlasIndex;
+    /**
+     * 纹理单元
+     */
+    private final int unit;
     /** texture array 层索引。 */
     private final int layer;
 
@@ -48,14 +50,14 @@ public final class TextureTileSlot {
     /** 层内列——atlas 槽位网格的第几列。无方向语义。 */
     private final int dataColumn;
 
-    public TextureTileSlot(int atlasIndex, int layer, int dataRow, int dataColumn) {
-        this.atlasIndex = atlasIndex;
+    public TextureTileSlot(int unit, int layer, int dataRow, int dataColumn) {
+        this.unit = unit;
         this.layer = layer;
         this.dataRow = dataRow;
         this.dataColumn = dataColumn;
     }
 
-    public int getAtlasIndex()  { return atlasIndex; }
+    public int getUnit()  { return unit; }
     public int getLayer() { return layer; }
     public int getDataRow()   { return dataRow; }
     public int getDataColumn()   { return dataColumn; }
@@ -69,7 +71,7 @@ public final class TextureTileSlot {
         if (this == o) return true;
         if (!(o instanceof TextureTileSlot)) return false;
         TextureTileSlot that = (TextureTileSlot) o;
-        return atlasIndex == that.atlasIndex
+        return unit == that.unit
                 && layer == that.layer
                 && dataRow == that.dataRow
                 && dataColumn == that.dataColumn;
@@ -77,7 +79,7 @@ public final class TextureTileSlot {
 
     @Override
     public int hashCode() {
-        int h = atlasIndex;
+        int h = unit;
         h = 31 * h + layer;
         h = 31 * h + dataRow;
         h = 31 * h + dataColumn;
@@ -86,7 +88,7 @@ public final class TextureTileSlot {
 
     @Override
     public String toString() {
-        return "AtlasSlot{unit=" + atlasIndex
+        return "AtlasSlot{unit=" + unit
                 + ", layer=" + layer
                 + ", row=" + dataRow
                 + ", col=" + dataColumn + "}";

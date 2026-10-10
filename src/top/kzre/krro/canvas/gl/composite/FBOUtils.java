@@ -6,6 +6,7 @@ import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.tile.GLTiledTextureLayer;
 import top.kzre.krro.core.util.SerialExecutor;
+import top.kzre.krro.util.math.KMath;
 import top.kzre.krro.util.tile.TiledCanvas;
 
 /**
@@ -128,23 +129,14 @@ public final class FBOUtils {
             GLFramebuffer fbo, int tileSize, SerialExecutor glExecutor
     ) {
         TiledCanvas canvas = wrapCanvas(fbo, tileSize, glExecutor);
-
-        // GL 纹理 v 轴向上，画布 y 轴向下——需要一次 y 翻转：
-        //   y' = -y + H
-        // 对应仿射 [a, b, c, d, tx, ty] = [1, 0, 0, -1, 0, H]
-        float height = fbo.getHeight();   // 或 fbo.getColorAttachment().getHeight()
-
-        return glViewCanvasToLayer(canvas, height);
-    }
-
-    public static WrapLayer glViewCanvasToLayer(TiledCanvas canvas, float viewHeight) {
         return new WrapLayer(
                 new Object(),
                 canvas,
-                new float[]{1.0F, 0.0F, 0.0F, -1.0F, 0.0F, viewHeight},
+                KMath.mat2dIdentity(),
                 true,
                 1.0f,
                 Blends.NORMAL
         );
     }
+
 }

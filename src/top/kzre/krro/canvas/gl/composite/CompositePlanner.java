@@ -1,7 +1,6 @@
 package top.kzre.krro.canvas.gl.composite;
 
 import top.kzre.colorutils.blend.Blends;
-import top.kzre.krro.canvas.gl.resource.FixedSizeFrameBufferPool;
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
@@ -129,7 +128,6 @@ public final class CompositePlanner {
         }
 
         GLAtlas[] atlases = page.getAtlases();
-        GLTiledTextureLayout texTileLayout = atlases[0].getLayout();
         // ── 每批：分配槽位 + 打包 + 构造 bundle ──
         List<ShaderDraw> draws = new ArrayList<>(batchBundles.size());
         GLBindable[] bindables = new GLBindable[atlases.length];
@@ -198,10 +196,10 @@ public final class CompositePlanner {
                         TileProjector.projectLayerIntoFirst(fboBLayer, dirtyList, tileSize, tilesToDraw);
                     }
                 }
-                factoryContext = new ShaderFactoryContext(tilesToDraw, viewTileInfo, resolvedBundables, context, texTileLayout);
+                factoryContext = new ShaderFactoryContext(tilesToDraw, viewTileInfo, resolvedBundables, context);
 
                 if (Objects.equals(shaderKey, Blends.NORMAL)){
-                    shader = SimpleNormalFactory.INSTANCE.create(factoryContext);
+                    shader = SimpleNormalShaderFactory.INSTANCE.create(factoryContext);
                 }else {
                     throw new IllegalArgumentException("shader keys must match");
                 }
