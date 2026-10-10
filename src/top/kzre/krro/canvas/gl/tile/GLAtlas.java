@@ -687,7 +687,7 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
             try {
                 FloatBuffer slice = src.slice();
                 slice.limit(needFloats);
-                PixelCodec.pack(fmt, slice, pixelCount, tmp);
+                PixelCodec.packPreAlpha(fmt, slice, pixelCount, tmp);
 
                 tmp.flip();
                 // 行序翻转，转gl座标系，y向上

@@ -338,7 +338,7 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
                             ByteBuffer out = MemoryUtil.memAlloc(needFloats * Float.BYTES);
                             try {
                                 FloatBuffer dst = out.asFloatBuffer();
-                                PixelCodec.unpack(fmt, packed, pixelCount, dst);
+                                PixelCodec.unpackPreAlpha(fmt, packed, pixelCount, dst);
                                 dst.flip();
 
                                 target.replaceTile(tx, ty, out);
@@ -365,7 +365,6 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
 
         @Override
         public int acquire() {
-
             return super.acquire();
         }
 
