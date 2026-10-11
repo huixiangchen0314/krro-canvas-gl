@@ -3,6 +3,7 @@ package top.kzre.krro.canvas.gl.tile;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.resource.GLTexturePool;
 import top.kzre.krro.core.util.AsyncExecutor;
+import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.TiledCanvas;
 
 /**
@@ -18,7 +19,7 @@ public final class GLTiledTexture extends AbstractGLTiledTexture {
 
     public GLTiledTexture(GLTexture texture, int tileSize,
                           GLTexturePool texPool,
-                          AsyncExecutor glExecutor) {
+                          SerialExecutor glExecutor) {
         super(texture, tileSize, glExecutor);
         if (texPool == null) {
             throw new IllegalArgumentException("texPool must not be null");

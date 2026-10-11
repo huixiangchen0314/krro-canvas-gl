@@ -1,6 +1,7 @@
 package top.kzre.krro.canvas.gl.composite.shaders;
 
 import top.kzre.krro.canvas.gl.composite.AbstractShader;
+import top.kzre.krro.canvas.gl.composite.ShaderConstants;
 import top.kzre.krro.canvas.gl.composite.TileBufferGroup;
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLProgram;
@@ -36,9 +37,6 @@ import java.util.List;
 public final class NormalShader extends AbstractShader {
     /** 单 group 的实例 attribute location。 */
     private static final int INSTANCE_LOCATION = 1;
-
-    /** shader 源码里声明的纹理采样器数量。 */
-    public static final int TEXTURE_SLOTS = 4;
 
     private final TileBufferGroup     group;
     private final int                 viewWidth;
@@ -108,12 +106,12 @@ public final class NormalShader extends AbstractShader {
         p.setIntIfPresent("uIndexTable", group.getIndexTableUnit());
 
         // ── 纹理采样器 ──
-        for (int i = 0; i < TEXTURE_SLOTS; i++) {
+        for (int i = 0; i < ShaderConstants.MAX_LAYER_TEXTURE_UNIT_COUNT; i++) {
             p.setIntIfPresent("uTexture" + i, i);
         }
 
 
-        float[] scales = new float[TEXTURE_SLOTS * 2];   // 8 * 2
+        float[] scales = new float[ShaderConstants.MAX_LAYER_TEXTURE_UNIT_COUNT * 2];   // 8 * 2
 
         for (int i = 0; i < bindables.length; i++) {
             GLBindable b = bindables[i];

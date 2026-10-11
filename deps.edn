@@ -6,9 +6,9 @@
         com.taoensso/tufte {:mvn/version "2.6.3"}
 
         ;; LWJGL 核心 + OpenGL（不含任何平台 natives）
-        org.lwjgl/lwjgl         {:mvn/version "3.3.3"}
-        org.lwjgl/lwjgl-opengl  {:mvn/version "3.3.3"}
-        org.lwjgl/lwjgl-glfw              {:mvn/version "3.3.3"}
+        org.lwjgl/lwjgl {:mvn/version "3.3.3"}
+        org.lwjgl/lwjgl-opengl {:mvn/version "3.3.3"}
+        org.lwjgl/lwjgl-glfw {:mvn/version "3.3.3"}
         }
 
  :aliases

@@ -17,7 +17,11 @@
            view-width view-height]
     :as   opts}]
   {:pre [(instance? GLCompositeContext gl-composite-context)
-         (= tile-size (.getTileSize ^GLCompositeContext gl-composite-context))]}
+         (= tile-size (.getTileSize ^GLCompositeContext gl-composite-context))
+         ;; 不能在gl线程发起调度，破坏线程模型，可能死锁
+         (not= (.getId (Thread/currentThread))
+               (.getThreadId (.getGlExecutor gl-composite-context)))]}
+  (log/info "gl render-batch")
   (let [^GLCompositeContext ctx gl-composite-context]
     (if (or (nil? layer-stack)
             (empty? layer-stack)
@@ -26,29 +30,32 @@
       (-> (rasterize/rasterize-layers layer-stack opts)
           (promise/then
             (fn [{:keys [layers tracker]}]
-              (-> (try
-                    (promise/from-completable-future
-                      (Render/render
-                        (into [(layer/wrap-canvas-as-layer backdrop-canvas)]
-                              layers)
-                        ctx
-                        (int view-width) (int view-height)
-                        dirty-tiles))
-                    (catch Throwable t
-                      (promise/rejected t)))
-                  (promise/handle
-                    (fn [^TiledCanvas result-canvas e]
-                      (try
-                        (if e
-                          (throw e)
-                          (.mergeCanvas backdrop-canvas result-canvas))
-                        (finally
+              (let [beginRenderTime (System/nanoTime)]
+                (-> (try
+                      (promise/from-completable-future
+                        (Render/render
+                          (into [(layer/wrap-canvas-as-layer backdrop-canvas)]
+                                layers)
+                          ctx
+                          (int view-width) (int view-height)
+                          dirty-tiles))
+                      (catch Throwable t
+                        (promise/rejected t)))
+                    (promise/handle
+                      (fn [^TiledCanvas result-canvas e]
+                        (let [currentTime (System/nanoTime)]
+                          (log/info "batch/render-batch :gl\n"
+                                    "render=" (long (/ (- currentTime beginRenderTime) 1e6)) "ms")
                           (try
-                            (.close result-canvas)
-                            (catch Throwable t
-                              (log/error t)))
-                          (try
-                            (tracker/close! tracker)
-                            (catch Throwable t
-                              (log/error t)))
-                          )))))))))))
+                            (if e
+                              (throw e)
+                              (.mergeCanvas backdrop-canvas result-canvas))
+                            (finally
+                              (try
+                                (.close result-canvas)
+                                (catch Throwable t
+                                  (log/error t)))
+                              (try
+                                (tracker/close! tracker)
+                                (catch Throwable t
+                                  (log/error t))))))))))))))))

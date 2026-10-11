@@ -6,7 +6,6 @@ import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLProgram;
 import top.kzre.krro.canvas.gl.resource.GLProgramCache;
 import top.kzre.krro.canvas.gl.tile.TextureTileSlot;
-import top.kzre.krro.canvas.gl.tile.GLTiledTextureLayout;
 import top.kzre.krro.canvas.gl.tile.TileRef;
 
 import java.util.ArrayList;

@@ -1,4 +1,6 @@
 (ns top.kzre.krro.canvas.gl.composite.rasterize
+  "虽然这里提供了完成的光栅化分发，但更好的是上层调用。
+  这里的光栅化分发仅为完整性考虑。"
   (:require [top.kzre.krro.canvas.gl.composite.layer :as layer]
             [top.kzre.krro.core.util.promise :as promise]
             [top.kzre.krro.core.util.tracker :as tracker]))
@@ -68,5 +70,9 @@
 
 
 (defmethod rasterize-layer :raster
+  [layer _]
+  (layer/wrap-layer layer))
+
+(defmethod rasterize-layer :merged
   [layer _]
   (layer/wrap-layer layer))

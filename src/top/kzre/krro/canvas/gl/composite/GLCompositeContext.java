@@ -284,7 +284,7 @@ public class GLCompositeContext implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) {
             throw new IllegalStateException("context is already closed");
         }
-        if (Thread.currentThread().getId() == glExecutor.getTheadId()) {
+        if (Thread.currentThread().getId() == glExecutor.getThreadId()) {
             doClose();
         } else {
             glExecutor.submit(this::doClose);

@@ -2,13 +2,15 @@ package top.kzre.krro.canvas.gl.tile;
 
 import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.DownloadableTile;
-import top.kzre.krro.canvas.gl.MiscExecutor;
+import top.kzre.krro.canvas.gl.composite.DownloadExecutor;
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.resource.PixelCodec;
 import top.kzre.krro.canvas.gl.resource.PixelFormat;
 import top.kzre.krro.canvas.gl.util.BufferUtils;
+import top.kzre.krro.canvas.gl.util.ExecutorUtils;
 import top.kzre.krro.core.util.AsyncExecutor;
+import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.*;
 
 import java.nio.ByteBuffer;
@@ -38,7 +40,7 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
 
     protected final GLTexture      texture;
     protected final TiledCanvas    canvas;
-    protected final AsyncExecutor  glExecutor;
+    protected final SerialExecutor  glExecutor;
 
     /** 活跃视图计数。归零时触发 onAllViewsReleased。 */
     private final AtomicInteger activeTiles = new AtomicInteger(0);
@@ -50,7 +52,7 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
     protected volatile boolean released = false;
 
     protected AbstractGLTiledTexture(GLTexture texture, int tileSize,
-                                     AsyncExecutor glExecutor) {
+                                     SerialExecutor glExecutor) {
         if (texture == null) {
             throw new IllegalArgumentException("texture must not be null");
         }
@@ -320,11 +322,14 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
             int glRow = glRow();
 
             // ── GL 线程：只做 readback ──
-            return owner.glExecutor
-                    .submit(() -> owner.texture().downloadRegion(
-                            layer, canvasColumn * tileSize, glRow * tileSize,
-                            tileSize, tileSize))
 
+            return ExecutorUtils.submitIfThread(
+                    owner.glExecutor,
+                            () -> owner.texture().downloadRegion(
+                                    layer,
+                                    canvasColumn * tileSize,
+                                    glRow * tileSize,
+                                    tileSize, tileSize))
                     // ── CPU 线程：flip / unpack / replaceTile ──
                     .thenApplyAsync(packed -> {
                         try {
@@ -350,7 +355,7 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
                             MemoryUtil.memFree(packed);
                         }
                         return null;
-                    }, MiscExecutor.get());
+                    }, DownloadExecutor.get());
         }
 
         private int glRow() {

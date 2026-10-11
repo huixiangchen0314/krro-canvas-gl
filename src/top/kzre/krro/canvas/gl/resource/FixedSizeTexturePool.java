@@ -1,5 +1,7 @@
 package top.kzre.krro.canvas.gl.resource;
 
+import top.kzre.krro.core.util.SerialExecutor;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -81,11 +83,40 @@ public final class FixedSizeTexturePool implements GLTexturePool, AutoCloseable 
      * @throws IllegalStateException 池已关闭
      */
     public GLTexture acquire() {
+        requireGlThread();
+
         if (closed) {
             throw new IllegalStateException("pool is closed");
         }
 
+        GLTexture idleTex = acquireIdle();
+        if (idleTex != null) {
+            return idleTex;
+        }
 
+        return GLTexture.create(width, height, layers, pixelFormat);
+    }
+
+    /**
+     * 从空闲池中获取一个纹理；没有可用的返回 {@code null}。
+     *
+     * <p><b>用途</b>：调用方希望"只复用，不新建"——比如预热阶段或
+     * 需要预判是否会触发 GL 调度的场景。若调用方接受新建，应使用
+     * {@link #acquire()}。
+     *
+     * <p><b>不触发 GL 调用</b>：仅从空闲队列取用，无新纹理创建。
+     * 因此可在非 GL 线程调用——但拿到的纹理仍只能在 GL 线程使用。
+     *
+     * <p><b>已释放的纹理</b>：内部检测并跳过，继续取下一个。整个
+     * 队列都不可用时返回 {@code null}。
+     *
+     * <p><b>池关闭状态</b>：关闭后空闲队列已清空，本方法返回
+     * {@code null}，不抛异常——调用方若需感知关闭状态，用
+     * {@link #isClosed()}。
+     *
+     * @return 可用的纹理，所有权归调用方；无可用时返回 {@code null}
+     */
+    public GLTexture acquireIdle() {
         synchronized (lock) {
             while (!idle.isEmpty()) {
                 GLTexture t = idle.pollFirst();
@@ -93,15 +124,10 @@ public final class FixedSizeTexturePool implements GLTexturePool, AutoCloseable 
                     return t;
                 }
             }
+            return null;
         }
-
-        long theadId = delegate.getGlExecutor().getTheadId();
-        if(Thread.currentThread().getId() != theadId){
-            throw new IllegalStateException("texture acquire must be called in gl thread, when no idle rest.");
-        }
-
-        return GLTexture.create(width, height, layers, pixelFormat);
     }
+
 
     // ═══════════════════════════════════════════════
     // 归还
@@ -215,4 +241,9 @@ public final class FixedSizeTexturePool implements GLTexturePool, AutoCloseable 
     public int         getHeight()      { return height; }
     public int         getLayers()      { return layers; }
     public PixelFormat getPixelFormat() { return pixelFormat; }
+
+    @Override
+    public SerialExecutor getGlExecutor() {
+        return delegate.getGlExecutor();
+    }
 }

@@ -32,7 +32,7 @@ import java.util.List;
  *
  * <p><b>线程契约</b>：纯函数，无状态。
  */
-public interface ShaderDrwBundler {
+public interface ShaderDrawBundler {
     /**
      * 按 shader 对图层分组。
      *

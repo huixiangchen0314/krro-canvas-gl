@@ -1,4 +1,4 @@
-package top.kzre.krro.canvas.gl;
+package top.kzre.krro.canvas.gl.composite;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -7,43 +7,46 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 合成管线的通用后台执行器。
+ * 下载路径专用后台执行器。
  *
- * <p><b>用途</b>：承载合成管线的 CPU 侧工作——比如下载后的行序翻转、
- * 像素解包、以及其它不该占用 GL 线程的杂项任务。与 GL 线程解耦——
- * GL 线程只做 GL 调用，CPU 侧工作提交到这里。
+ * <p><b>职责</b>：承载 FBO / 纹理下载后的全部 CPU 侧处理——
+ * 行序翻转、像素解包、反预乘、格式转换、内存拷贝。**不含 GL 调用**
+ * ——{@code glReadPixels} 等 GL 侧动作仍在 GL 线程完成；本执行器只
+ * 处理 GL 调用已产出的字节缓冲。
  *
- * <p><b>单线程</b>：单线程保证任务顺序执行，避免共享状态竞争（例如
- * {@link top.kzre.krro.canvas.gl.util.BufferUtils} 的 {@code ThreadLocal}
- * 中转缓冲只在这一个线程内被使用）。任务量不大时也无需并行。
+ * <p><b>单线程</b>：串行执行，保证下载任务按提交顺序完成。同时
+ * 复用 {@link top.kzre.krro.canvas.gl.util.BufferUtils BufferUtils}
+ * 的 {@code ThreadLocal} 中转缓冲——单线程下缓冲只被一条线程持有，
+ * 无跨线程争用。
  *
- * <p><b>生命周期</b>：懒加载——首次 {@link #get()} 时创建。进程退出时
- * 由 {@link #shutdown()} 显式关闭。daemon 线程不阻塞 JVM 退出。
+ * <p><b>生命周期</b>：懒加载——首次 {@link #get()} 时创建。进程退出
+ * 时由 {@link #shutdown()} 显式关闭。daemon 线程不阻塞 JVM 退出。
  *
  * <p><b>线程契约</b>：{@link #get()} 任意线程可调；返回的 executor
- * 允许任意线程提交任务。
+ * 允许任意线程提交任务。提交的任务本身不得调用 GL——它运行在
+ * 下载线程上，不是 GL 线程。
  */
-public final class MiscExecutor {
+public final class DownloadExecutor {
 
     private static final Object LOCK = new Object();
-    private static volatile ExecutorService MISC_EXECUTOR;
+    private static volatile ExecutorService DOWNLOAD_EXECUTOR;
 
-    private MiscExecutor() {}
+    private DownloadExecutor() {}
 
     /**
-     * 返回通用杂项单线程执行器。
+     * 返回下载专用单线程执行器。
      *
      * <p>首次调用时创建——之后返回同一个实例。线程为 daemon——
      * JVM 退出不被阻塞。
      */
     public static ExecutorService get() {
-        ExecutorService e = MISC_EXECUTOR;
+        ExecutorService e = DOWNLOAD_EXECUTOR;
         if (e == null) {
             synchronized (LOCK) {
-                e = MISC_EXECUTOR;
+                e = DOWNLOAD_EXECUTOR;
                 if (e == null) {
                     e = create();
-                    MISC_EXECUTOR = e;
+                    DOWNLOAD_EXECUTOR = e;
                 }
             }
         }
@@ -58,17 +61,17 @@ public final class MiscExecutor {
      */
     public static void shutdown() {
         synchronized (LOCK) {
-            if (MISC_EXECUTOR == null) return;
-            MISC_EXECUTOR.shutdown();
+            if (DOWNLOAD_EXECUTOR == null) return;
+            DOWNLOAD_EXECUTOR.shutdown();
             try {
-                if (!MISC_EXECUTOR.awaitTermination(5, TimeUnit.SECONDS)) {
-                    MISC_EXECUTOR.shutdownNow();
+                if (!DOWNLOAD_EXECUTOR.awaitTermination(5, TimeUnit.SECONDS)) {
+                    DOWNLOAD_EXECUTOR.shutdownNow();
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                MISC_EXECUTOR.shutdownNow();
+                DOWNLOAD_EXECUTOR.shutdownNow();
             }
-            MISC_EXECUTOR = null;
+            DOWNLOAD_EXECUTOR = null;
         }
     }
 
@@ -83,7 +86,7 @@ public final class MiscExecutor {
             @Override
             public Thread newThread(Runnable r) {
                 Thread t = new Thread(r,
-                        "krro-canvas-gl-misc-" + seq.incrementAndGet());
+                        "krro-canvas-download-" + seq.incrementAndGet());
                 t.setDaemon(true);
                 return t;
             }

@@ -2,6 +2,7 @@ package top.kzre.krro.canvas.gl.tile;
 
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.core.util.AsyncExecutor;
+import top.kzre.krro.core.util.SerialExecutor;
 
 /**
  * 层范围的 {@link top.kzre.krro.util.tile.TiledCanvas} 视图。
@@ -35,7 +36,7 @@ public final class GLTiledTextureLayer extends AbstractGLTiledTexture {
      */
     public GLTiledTextureLayer(GLTexture texture, int tileSize,
                                int layerOffset, int layerCount,
-                               AsyncExecutor glExecutor,
+                               SerialExecutor glExecutor,
                                Runnable onReleased) {
         super(texture, tileSize, glExecutor);
         if (layerOffset < 0) {

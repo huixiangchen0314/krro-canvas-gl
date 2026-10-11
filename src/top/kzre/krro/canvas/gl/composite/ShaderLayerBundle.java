@@ -3,7 +3,7 @@ package top.kzre.krro.canvas.gl.composite;
 import java.util.List;
 
 /**
- * 同一 shader 的图层组——{@link ShaderDrwBundler} 的产出。
+ * 同一 shader 的图层组——{@link ShaderDrawBundler} 的产出。
  *
  * <p><b>语义</b>：这些图层可以用同一个 shader 一次或多次绘制。
  * bundle 是"执行单元"，不是"绘制单元"——一个 bundle 可以进一步
@@ -17,7 +17,7 @@ import java.util.List;
  * <ul>
  *   <li>{@code layers} 的顺序即合成顺序，最底层在前。</li>
  *   <li>同一 bundle 内的图层必须连续或按 bundler 的规则排列，
- *       具体顺序由 {@link ShaderDrwBundler} 决定。</li>
+ *       具体顺序由 {@link ShaderDrawBundler} 决定。</li>
  * </ul>
  *
  * <p><b>不可变性</b>：本类只持有引用，不做防御性拷贝。

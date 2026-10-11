@@ -433,4 +433,14 @@ public final class GLTexture implements GLBindable{
                             + "] out of " + width + "x" + height);
         }
     }
+
+    @Override
+    public String toString() {
+        return "GLTexture{" +
+                "id=" + handle +
+                ", " + width + "x" + height + "x" + layers +
+                ", fmt=" + pixelFormat +
+                ", released=" + released +
+                '}';
+    }
 }

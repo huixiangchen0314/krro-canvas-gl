@@ -5,9 +5,9 @@ import top.kzre.colorutils.blend.Blends;
 import java.util.Collections;
 import java.util.List;
 
-public final class MockShaderDrwBundler implements ShaderDrwBundler {
+public final class MockShaderDrawBundler implements ShaderDrawBundler {
 
-    public static final MockShaderDrwBundler INSTANCE = new MockShaderDrwBundler();
+    public static final MockShaderDrawBundler INSTANCE = new MockShaderDrawBundler();
 
     @Override
     public List<ShaderLayerBundle> bundle(List<ILayer> layers) {

@@ -14,10 +14,22 @@ uniform sampler2DArray uTexture0;
 uniform sampler2DArray uTexture1;
 uniform sampler2DArray uTexture2;
 uniform sampler2DArray uTexture3;
+uniform sampler2DArray uTexture4;
+uniform sampler2DArray uTexture5;
+uniform sampler2DArray uTexture6;
+uniform sampler2DArray uTexture7;
+uniform sampler2DArray uTexture8;
+uniform sampler2DArray uTexture9;
+uniform sampler2DArray uTexture10;
+uniform sampler2DArray uTexture11;
+uniform sampler2DArray uTexture12;
+uniform sampler2DArray uTexture13;
+uniform sampler2DArray uTexture14;
+uniform sampler2DArray uTexture15;
 
 // 每个 bindable 的 (1/edgeU, 1/edgeV)——单位瓦片在纹理 UV 空间中的占比。
 // 索引对齐 bindable 的单元号；atlas 两项相等，FBO 两项各自按视口尺寸算。
-uniform vec2 uTextureScales[4];
+uniform vec2 uTextureScales[16];
 
 uniform float uTileSize;
 
@@ -26,10 +38,22 @@ uniform vec2  uViewport;
 out vec4 fragColor;
 
 vec4 sampleTexture(int unit, vec3 uv) {
-    if (unit == 0) return texture(uTexture0, uv);
-    if (unit == 1) return texture(uTexture1, uv);
-    if (unit == 2) return texture(uTexture2, uv);
-    if (unit == 3) return texture(uTexture3, uv);
+    if (unit == 0)  return texture(uTexture0,  uv);
+    if (unit == 1)  return texture(uTexture1,  uv);
+    if (unit == 2)  return texture(uTexture2,  uv);
+    if (unit == 3)  return texture(uTexture3,  uv);
+    if (unit == 4)  return texture(uTexture4,  uv);
+    if (unit == 5)  return texture(uTexture5,  uv);
+    if (unit == 6)  return texture(uTexture6,  uv);
+    if (unit == 7)  return texture(uTexture7,  uv);
+    if (unit == 8)  return texture(uTexture8,  uv);
+    if (unit == 9)  return texture(uTexture9,  uv);
+    if (unit == 10) return texture(uTexture10, uv);
+    if (unit == 11) return texture(uTexture11, uv);
+    if (unit == 12) return texture(uTexture12, uv);
+    if (unit == 13) return texture(uTexture13, uv);
+    if (unit == 14) return texture(uTexture14, uv);
+    if (unit == 15) return texture(uTexture15, uv);
     return vec4(0);
 }
 
@@ -56,17 +80,12 @@ void main() {
         vec4 l0 = texelFetch(uLayerTable, layerEntry * 2 + 0);
         vec4 l1 = texelFetch(uLayerTable, layerEntry * 2 + 1);
 
-        // 屏幕像素 → 图层局部像素（画布空间，y 向下）
         vec2 layerPos = vec2(
                 l0.x * vPixel.x + l0.z * vPixel.y + l1.x,
                 l0.y * vPixel.x + l0.w * vPixel.y + l1.y
         );
 
-        // 图层局部像素 → 瓦片内局部 UV（画布空间，y 向下）
         vec2 localUv = (layerPos - tileOrigin) / uTileSize;
-
-        // 画布空间 y 向下，图集存储已翻转为 GL 空间（v 向上）——
-        // 采样 UV 需要一次 y 反向。
         localUv.y = 1.0 - localUv.y;
 
         if (any(lessThan(localUv, vec2(0.0))) ||
@@ -74,20 +93,15 @@ void main() {
             continue;
         }
 
-        // per-unit 缩放——atlas 与 FBO 的 edgeU/edgeV 不一定相同，
-        // 甚至同一纹理的 edgeU 与 edgeV 也可能不同（非正方形视口）。
         vec2 scale = uTextureScales[unit];
         vec2 uv = uv0 + localUv * scale;
 
         vec4 c = sampleTexture(unit, vec3(uv, texLayer));
 
-        c.rgb *= c.a;
-
         float layerAlpha = l1.z;
         c.rgb *= layerAlpha;
         c.a   *= layerAlpha;
 
-        // premultiplied alpha 的 source-over
         acc = c + acc * (1.0 - c.a);
     }
 

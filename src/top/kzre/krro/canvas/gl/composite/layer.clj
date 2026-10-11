@@ -10,10 +10,10 @@
   (WrapLayer.
     (:id layer)
     (:canvas layer)
-    (:transform layer)
+    (:transform layer (KMath/mat2dIdentity))
     (:visible layer true)
     (:opacity layer 1.0)
-    (str (:blend-mode layer :normal))))
+    (name (:blend-mode layer :normal))))
 
 
 (defn wrap-canvas-as-layer

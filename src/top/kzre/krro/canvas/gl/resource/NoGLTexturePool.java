@@ -21,9 +21,10 @@ public final class NoGLTexturePool implements GLTexturePool {
             throw new IllegalArgumentException("glExecutor must not be null");
         }
         this.glExecutor = glExecutor;
-        this.threadId   = glExecutor.getTheadId();
+        this.threadId   = glExecutor.getThreadId();
     }
 
+    @Override
     public SerialExecutor getGlExecutor() {
         return glExecutor;
     }

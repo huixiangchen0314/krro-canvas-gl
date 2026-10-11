@@ -3,10 +3,11 @@ package top.kzre.krro.canvas.gl.composite;
 import top.kzre.colorutils.blend.Blends;
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
+import top.kzre.krro.canvas.gl.resource.GLTexture;
+import top.kzre.krro.canvas.gl.tile.AbstractGLTiledTexture;
 import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
 import top.kzre.krro.canvas.gl.tile.GLAtlas;
 import top.kzre.krro.canvas.gl.tile.GLTile;
-import top.kzre.krro.canvas.gl.tile.GLTiledTextureLayout;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.Tile;
 import top.kzre.krro.util.tile.TiledCanvas;
@@ -66,7 +67,10 @@ public final class CompositePlanner {
                 dirtyList, viewWidth, viewHeight, tileSize);
 
         // ── 按 shader 分组 ──
-        ShaderDrwBundler bundler = MockShaderDrwBundler.INSTANCE;
+        ShaderDrawBundler bundler = new TextureCountLimitDrawBundler(
+                MockShaderDrawBundler.INSTANCE,
+                ShaderConstants.MAX_LAYER_TEXTURE_UNIT_COUNT - 1
+        );
         List<ShaderLayerBundle> bundles = bundler.bundle(layers);
         if (bundles.isEmpty()) {
             return null;
@@ -83,6 +87,7 @@ public final class CompositePlanner {
             ShaderLayerTileSet layerTileSet = TileProjector.projectLayersInto(
                     bundledLayers, dirtyList, tileSize,
                     ShaderLayerTileSet.create());
+
             if (layerTileSet.layerTileRefs.isEmpty()) {
                 continue;
             }
@@ -127,24 +132,39 @@ public final class CompositePlanner {
             }
         }
 
+
         GLAtlas[] atlases = page.getAtlases();
-        // ── 每批：分配槽位 + 打包 + 构造 bundle ──
-        List<ShaderDraw> draws = new ArrayList<>(batchBundles.size());
-        GLBindable[] bindables = new GLBindable[atlases.length];
-        System.arraycopy(atlases, 0, bindables, 0, atlases.length);
+        GLTexture texA = fboA.getColorAttachment();
+        GLTexture texB = fboB.getColorAttachment();
 
-        GLBindable[] bindablesA = new GLBindable[atlases.length + 1];
-        System.arraycopy(atlases, 0, bindablesA, 0, atlases.length);
-        bindablesA[atlases.length] = fboA.getColorAttachment();
 
-        GLBindable[] bindablesB = new GLBindable[atlases.length + 1];
-        System.arraycopy(atlases, 0, bindablesB, 0, atlases.length);
-        bindablesB[atlases.length] = fboB.getColorAttachment();
-
+        List<ShaderDraw> draws = new ArrayList<>();
         for (ShaderBatchBundle batchBundle : batchBundles) {
             Shader shader;
+            List<ILayer> batchLayers = batchBundle.bundle.getLayers();
             String shaderKey = batchBundle.bundle.getShaderKey();
             ShaderLayerTileSet tileSet = batchBundle.tileSet;
+
+
+            // ── 本批次实际用到的外部纹理（非 atlas） ──
+            Set<GLTexture> batchTextures = LayerUtils.collectTextures(batchLayers);
+
+            int baseLen = atlases.length + batchTextures.size();
+
+            GLBindable[] bindables = new GLBindable[baseLen];
+            System.arraycopy(atlases, 0, bindables, 0, atlases.length);
+            {
+                int bi = atlases.length;
+                for (GLTexture t : batchTextures) {
+                    bindables[bi++] = t;
+                }
+            }
+
+            // acquire2Excluding 保证 texA / texB 不在 batchTextures 中，
+            // 无条件追加即可。
+            GLBindable[] bindablesA = appendBindable(bindables, baseLen, texA);
+            GLBindable[] bindablesB = appendBindable(bindables, baseLen, texB);
+
 
             List<ShaderLayerTileSet> tileSets = new ArrayList<>();
             List<ShaderLayerTileRef> tiles = tileSet.layerTileRefs;
@@ -215,7 +235,28 @@ public final class CompositePlanner {
                 fboA, fboB);
     }
 
+    /**
+     * 在 {@code base} 末尾追加 {@code target}——若 {@code targetInBase}
+     * 为 true，说明目标已经在基础数组中，直接返回基础数组本身（共享
+     * 引用，避免重复条目）。
+     *
+     * <p><b>数组只读</b>：返回的数组在合成流程中不被修改——共享是
+     * 安全的。{@code bindables} 数组仅用于：
+     * <ul>
+     *   <li>绘制前逐 unit 绑定纹理</li>
+     *   <li>{@code allocateSlots} / {@code packBuffers} 通过
+     *       {@code slotOf} 反查纹理的单元号</li>
+     * </ul>
+     * 两处都只读。
+     */
+    private static GLBindable[] appendBindable(
+            GLBindable[] base, int offset, GLBindable target) {
 
+        GLBindable[] result = new GLBindable[offset + 1];
+        System.arraycopy(base, 0, result, 0, offset);
+        result[offset] = target;
+        return result;
+    }
 
     // ═══════════════════════════════════════════════
     // 后续方法不变
@@ -233,10 +274,6 @@ public final class CompositePlanner {
         return ViewTileInfo.createPartial(
                 viewWidth, viewHeight, tileSize, tileXY);
     }
-
-
-
-
 
 
 }
