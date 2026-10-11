@@ -4,6 +4,7 @@ import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.UploadableTile;
 import top.kzre.krro.canvas.gl.resource.*;
 import top.kzre.krro.canvas.gl.util.BufferUtils;
+import top.kzre.krro.canvas.gl.util.Range;
 import top.kzre.krro.util.tile.*;
 
 import java.nio.ByteBuffer;
@@ -176,6 +177,9 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         return tile;
     }
 
+
+
+
     // ═══════════════════════════════════════════════
     // 精确分配
     // ═══════════════════════════════════════════════
@@ -216,6 +220,200 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         registerTile(index, tile);
         return tile;
     }
+
+
+    /**
+     * 从 startLayerIndex 开始，连续上传 count 个图层。
+     *
+     * <p><b>前置条件</b>：这 count 个层内的所有瓦片槽位必须已全部分配。
+     * 存在未分配的槽位抛异常。
+     *
+     * <p><b>总是上传</b>：不检查瓦片脏标记，无条件把 peer 数据重新 pack
+     * 并上传到 GPU。
+     *
+     * <p><b>一次调用</b>：内部把 count 层的数据 pack 到一个连续 staging
+     * 缓冲，用一次 {@code glTexSubImage3D(zoffset, depth=count)} 覆盖整段。
+     * 这是目前能实现的最小调用次数。
+     *
+     * <p><b>flip 封装</b>：行序翻转、pack、预乘等数据操作全部在此完成——
+     * 调用方只提供"哪些层"，无需关心字节布局。
+     *
+     * <p><b>线程契约</b>：必须在 GL 线程上调用。
+     *
+     * @param startLayerIndex 起始层索引，{@code [0, layout.getLayers())}
+     * @param count           连续层数，{@code > 0}，{@code start + count ≤ layers}
+     * @throws IndexOutOfBoundsException 层范围越界
+     * @throws IllegalArgumentException  count ≤ 0 或总字节数超 int 上限
+     * @throws IllegalStateException     范围内有未分配的槽位
+     */
+    public void uploadLayers(int startLayerIndex, int count) {
+        if (count <= 0) {
+            throw new IllegalArgumentException("count must be > 0: " + count);
+        }
+        int totalLayers = layout.getLayers();
+        if (startLayerIndex < 0 || startLayerIndex + count > totalLayers) {
+            throw new IndexOutOfBoundsException(
+                    "layer range [" + startLayerIndex + ", "
+                            + (startLayerIndex + count) + ") out of [0, "
+                            + totalLayers + ")");
+        }
+
+        int tilesPerLayer = layout.getTilesPerLayer();
+        int tileSize = layout.getTileSize();
+        int layerSize = layout.getLayerSize();
+        int bytesPerPixel = texture.getBytesPerPixel();
+        int bytesPerTile = tileSize * tileSize * bytesPerPixel;
+        int rowBytes = tileSize * bytesPerPixel;
+        long layerBytes = (long) layerSize * layerSize * bytesPerPixel;
+        long totalBytes = (long) count * layerBytes;
+        if (totalBytes > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(
+                    "batch too large: " + totalBytes + " bytes");
+        }
+
+        // ── 校验并快照 tile 引用（锁内）──
+        // 快照避免 pack 阶段与分配并发冲突——虽然 GL 线程串行，
+        // 但保持"引用稳定性"让 pack 逻辑只读。
+        GLTileDataImpl[] batch = new GLTileDataImpl[count * tilesPerLayer];
+        synchronized (lock) {
+            int cursor = 0;
+            for (int i = 0; i < count; i++) {
+                int layer = startLayerIndex + i;
+                int base = layer * tilesPerLayer;
+                for (int local = 0; local < tilesPerLayer; local++) {
+                    GLTileDataImpl tile = tiles[base + local];
+                    if (tile == null) {
+                        throw new IllegalStateException(
+                                "slot not allocated: layer=" + layer
+                                        + ", local=" + local);
+                    }
+                    batch[cursor++] = tile;
+                }
+            }
+        }
+
+        // ── staging + 逐 tile pack ──
+        PixelFormat fmt = texture.getPixelFormat();
+        int pixelCount = tileSize * tileSize;
+        int needFloats = PixelCodec.cpuFloats(fmt, pixelCount);
+
+        ByteBuffer staging = MemoryUtil.memAlloc((int) totalBytes);
+        ByteBuffer tileTmp = MemoryUtil.memAlloc(bytesPerTile);
+        try {
+            int tileIdx = 0;
+            for (int i = 0; i < count; i++) {
+                long layerOffset = (long) i * layerBytes;
+                for (int local = 0; local < tilesPerLayer; local++) {
+                    GLTileDataImpl tile = batch[tileIdx++];
+                    packTileInto(tile, staging, layerOffset,
+                            tileTmp, fmt, needFloats,
+                            tileSize, layerSize, bytesPerPixel, rowBytes);
+                }
+            }
+            staging.flip();
+
+            // ── 一次上传 ──
+            texture.uploadRegion3D(
+                    startLayerIndex, count,
+                    0, 0, layerSize, layerSize,
+                    staging);
+        } finally {
+            MemoryUtil.memFree(tileTmp);
+            MemoryUtil.memFree(staging);
+        }
+    }
+
+    /**
+     * 查找本 atlas 中最大的一段连续全空闲层。
+     *
+     * <p>整层空闲 = 该层所有槽位未分配。
+     *
+     * @return 空闲层区间 {@code (startLayer, count)}；没有全空闲层时返回 null
+     */
+    public Range findMaxContiguousFreeLayers() {
+        synchronized (lock) {
+            int tilesPerLayer = layout.getTilesPerLayer();
+            int layers = layout.getLayers();
+
+            int bestStart = -1, bestCount = 0;
+            int curStart = -1, curCount = 0;
+
+            for (int layer = 0; layer < layers; layer++) {
+                int base = layer * tilesPerLayer;
+                boolean layerFree = true;
+                for (int i = 0; i < tilesPerLayer; i++) {
+                    if (allocated.get(base + i)) {
+                        layerFree = false;
+                        break;
+                    }
+                }
+                if (layerFree) {
+                    if (curStart < 0) {
+                        curStart = layer;
+                        curCount = 1;
+                    } else {
+                        curCount++;
+                    }
+                    if (curCount > bestCount) {
+                        bestCount = curCount;
+                        bestStart = curStart;
+                    }
+                } else {
+                    curStart = -1;
+                    curCount = 0;
+                }
+            }
+            return bestStart < 0 ? Range.EMPTY : new Range(bestStart, bestCount);
+        }
+    }
+
+    /**
+     * 把单个 tile 的 peer 数据 pack + flip 后写入 staging 的对应位置。
+     *
+     * <p>复用一个 tileTmp 中转——避免每次 memAlloc。
+     */
+    private void packTileInto(GLTileDataImpl tile,
+                              ByteBuffer staging, long layerOffset,
+                              ByteBuffer tileTmp,
+                              PixelFormat fmt, int needFloats,
+                              int tileSize, int layerSize, int bytesPerPixel,
+                              int rowBytes) {
+        // ── pack 到 tileTmp ──
+        tileTmp.clear();
+        FloatBuffer src = tile.peer.floatBuffer();
+        if (src.remaining() != needFloats) {
+            throw new IllegalStateException(
+                    "peer data size mismatch: expected " + needFloats
+                            + " floats, got " + src.remaining()
+                            + " (tile=" + tile + ")");
+        }
+        FloatBuffer slice = src.slice();
+        slice.limit(needFloats);
+        PixelCodec.packPreAlpha(fmt, slice, tileSize * tileSize, tileTmp);
+        tileTmp.flip();
+
+        // ── 行序翻转，转 GL 坐标系 ──
+        BufferUtils.flipRows(tileTmp, tileSize, rowBytes);
+
+        // ── 逐行拷贝到 staging ──
+        // tile 在层内的目标位置
+        int px = tile.getDataColumn() * tileSize;
+        int py = tile.getDataRow() * tileSize;
+        int layerRowBytes = layerSize * bytesPerPixel;
+
+        long srcBase = MemoryUtil.memAddress(tileTmp);
+        long dstBase = MemoryUtil.memAddress(staging);
+
+        for (int y = 0; y < tileSize; y++) {
+            long srcRowAddr = srcBase + (long) y * rowBytes;
+            long dstRowAddr = dstBase
+                    + layerOffset
+                    + (long) (py + y) * layerRowBytes
+                    + (long) px * bytesPerPixel;
+            MemoryUtil.memCopy(srcRowAddr, dstRowAddr, rowBytes);
+        }
+    }
+
 
     /** 分配一个槽位，返回 Handle。不含 peer 绑定逻辑。 */
     private Handle allocateHandle() {

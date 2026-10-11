@@ -1,11 +1,13 @@
 package top.kzre.krro.canvas.gl.tile;
 
+import top.kzre.krro.canvas.gl.util.Range;
 import top.kzre.krro.util.tile.Tile;
 import top.kzre.krro.util.tile.TileFactory;
 import top.kzre.krro.util.tile.TiledCanvas;
 import top.kzre.krro.util.tile.util.WeakReferenceQueue;
 
 import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -134,6 +136,99 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
         // 记录提升的瓦片，方便换下
         liftedTiles.add(ref.getTile());
         return true;
+    }
+
+    @Override
+    public boolean allocate(TileRef ref) {
+        GLAtlas idleAtlas = null;
+        for (GLAtlas atlas : atlases) {
+            if (!atlas.isFull()) {
+                idleAtlas = atlas;
+                break;
+            }
+        }
+        if (idleAtlas == null){
+            return false;
+        }
+        AtlasTileFactory factory = new AtlasTileFactory(idleAtlas);
+        pageIn(ref, factory);
+
+        // 记录提升的瓦片，方便换下
+        liftedTiles.add(ref.getTile());
+        return true;
+    }
+
+    @Override
+    public AtlasLayerRange allocateContinuously(List<TileRef> tiles,
+                                                List<TileRef> restTiles) {
+        if (tiles == null) throw new NullPointerException("tiles");
+        if (restTiles == null) throw new NullPointerException("restTiles");
+
+        if (tiles.isEmpty()) {
+            return null;
+        }
+
+        // ── 1. 找空闲层最多的 atlas ──
+        int bestAtlasIdx = -1;
+        Range bestRange = Range.EMPTY;
+
+        for (int i = 0; i < atlases.length; i++) {
+            GLAtlas atlas = atlases[i];
+            if (atlas == null) continue;
+            Range free = atlas.findMaxContiguousFreeLayers();
+            if (free.getCount() > bestRange.getCount()) {
+                bestAtlasIdx = i;
+                bestRange = free;
+            }
+        }
+
+        if (bestAtlasIdx < 0) {
+            restTiles.addAll(tiles);
+            return null;
+        }
+
+        GLAtlas atlas = atlases[bestAtlasIdx];
+        int tilesPerLayer = atlas.getLayout().getTilesPerLayer();
+        int tilesPerEdge  = atlas.getLayout().getTilesPerEdge();
+
+        // ── 2. 计算能填充的整层数 ──
+        int fullLayers = Math.min(tiles.size() / tilesPerLayer,
+                bestRange.getCount());
+        if (fullLayers == 0) {
+            restTiles.addAll(tiles);
+            return null;
+        }
+
+        int toAllocate = fullLayers * tilesPerLayer;
+
+        // ── 3. 用 allocateAt 精确放置 ──
+        for (int i = 0; i < toAllocate; i++) {
+            int layerOffset = i / tilesPerLayer;
+            int local = i % tilesPerLayer;
+            int dataColumn = local % tilesPerEdge;
+            int dataRow    = local / tilesPerEdge;
+
+            int layer = bestRange.getStart() + layerOffset;
+
+            TextureTileSlot slot = new TextureTileSlot(
+                    bestAtlasIdx, layer, dataRow, dataColumn);
+
+            if (!allocateAt(slot, tiles.get(i))) {
+                throw new IllegalStateException(
+                        "slot unexpectedly occupied: atlas=" + bestAtlasIdx
+                                + ", layer=" + layer
+                                + ", col=" + dataColumn
+                                + ", row=" + dataRow);
+            }
+        }
+
+        // ── 4. 剩余写回 ──
+        for (int i = toAllocate; i < tiles.size(); i++) {
+            restTiles.add(tiles.get(i));
+        }
+
+        // ── 5. 返回分配范围 ──
+        return new AtlasLayerRange(atlas, bestRange.getStart(), fullLayers);
     }
 
     /**

@@ -254,6 +254,39 @@ public final class GLTexture implements GLBindable{
     }
 
     /**
+     * 上传 [z0, z0+depth) 层的相同矩形区域 (x, y, w, h)。
+     *
+     * <p>一次 {@code glTexSubImage3D} 完成——覆盖整个 3D 盒子。
+     *
+     * @param z0    起始层，{@code [0, layers)}
+     * @param depth 层数，{@code > 0}，{@code z0 + depth ≤ layers}
+     * @param x,y,w,h 层内矩形区域
+     * @param data 数据缓冲
+     */
+    public void uploadRegion3D(int z0, int depth,
+                               int x, int y, int w, int h,
+                               ByteBuffer data) {
+        checkAlive();
+        if (z0 < 0 || depth <= 0 || z0 + depth > layers) {
+            throw new IndexOutOfBoundsException(
+                    "layer range [" + z0 + ", " + (z0 + depth) + ")");
+        }
+        checkRegion(x, y, w, h);
+
+        glBindTexture(GL_TEXTURE_2D_ARRAY, handle);
+        try {
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0,
+                    x, y, z0,
+                    w, h, depth,
+                    pixelFormat.getGlClientFormat(),
+                    pixelFormat.getGlType(),
+                    data);
+        } finally {
+            glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+        }
+    }
+
+    /**
      * 下载指定层的整个内容到 CPU。
      *
      * <p>返回的 buffer 由 {@link MemoryUtil#memAlloc} 分配，<b>调用方负责释放</b>。
