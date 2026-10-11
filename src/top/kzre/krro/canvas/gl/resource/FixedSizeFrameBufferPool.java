@@ -1,6 +1,7 @@
 package top.kzre.krro.canvas.gl.resource;
 
 import top.kzre.krro.canvas.gl.util.ExecutorUtils;
+import top.kzre.krro.canvas.gl.util.ResourceUtils;
 import top.kzre.krro.core.util.SerialExecutor;
 
 import java.util.*;
@@ -42,6 +43,15 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
     private final Object lock = new Object();
 
     /**
+     * 持久保存的 fbo 数量
+     */
+    private final int capacity;
+    /**
+     * 持久保存的 slot, 每个slot是一张纹理
+     */
+    private final int slotCapacity;
+
+    /**
      * 装饰 texturePool。
      *
      * <p><b>所有权转移</b>：构造后 texturePool 归本池所有，
@@ -54,6 +64,8 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
         if (texturePool == null) {
             throw new IllegalArgumentException("texturePool must not be null");
         }
+        this.slotCapacity = texturePool.getCapacity();
+        this.capacity = texturePool.getCapacity() * texturePool.getLayers();
         this.texturePool = texturePool;
     }
 
@@ -172,8 +184,12 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
     /**
      * 归还 FBO。
      *
-     * <p>归还后如果所属 slot 的全部 FBO 都空闲，该 slot 从池中移除，
-     * 纹理归还 texturePool——峰值过后 slot 数回落。
+     * <p><b>低水位保留</b>：slot 全部空闲时不一定回收——只有当
+     * {@code slots.size() > slotCapacity} 时才移除最尾部的空闲 slot，
+     * 归还其纹理给 texturePool。低水位以下的空闲 slot 常驻——保留
+     * 已经创建好的 FBO，避免下次 acquire 又走 glGenFramebuffers。
+     *
+     * <p>峰值过后 slot 数回落到 {@code slotCapacity}，不再继续缩水。
      *
      * <p>不属于本池的 FBO 抛异常——静默忽略会导致 FBO 永久泄漏。
      * null 或已释放的 FBO 静默忽略（幂等归还）。
@@ -183,23 +199,36 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
         if (framebuffer == null) return;
         if (framebuffer.isReleased()) return;
 
+        TextureSlot slotToClose = null;
+        boolean found = false;
+
         synchronized (lock) {
             for (int i = 0; i < slots.size(); i++) {
                 TextureSlot slot = slots.get(i);
-                if (slot.owns(framebuffer)) {
-                    slot.release(framebuffer);
-                    activeCount--;
+                if (!slot.owns(framebuffer)) continue;
 
-                    // 全部空闲——移除 slot，归还纹理
-                    if (slot.isFullyIdle()) {
-                        slots.remove(i);
-                        texturePool.release(slot.texture());
-                    }
-                    return;
+                found = true;
+                slot.release(framebuffer);
+                activeCount--;
+
+                // 全空闲且当前 slot 数超过低水位——回收。
+                // 低水位以下的空闲 slot 保留常驻，避免下次 acquire
+                // 又要重新 glGenFramebuffers。
+                if (slot.isFullyIdle() && slots.size() > slotCapacity) {
+                    texturePool.release(slot.texture());
+                    slotToClose = slots.remove(i);
                 }
+                break;
             }
+        }
+
+        if (!found) {
             throw new IllegalArgumentException(
                     "framebuffer does not belong to this pool");
+        }
+
+        if (slotToClose != null) {
+            ExecutorUtils.submitIfThread(getGlExecutor(), slotToClose::close);
         }
     }
 
@@ -218,7 +247,32 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
      */
     @Override
     public void close() {
-        texturePool.close();
+        List<TextureSlot> toClose;
+        synchronized (lock) {
+            toClose = new ArrayList<>(slots);
+            slots.clear();
+        }
+
+        // 归还纹理——逐个 try，单个失败不中断
+        RuntimeException error = null;
+        for (TextureSlot slot : toClose) {
+            try {
+                texturePool.release(slot.texture());
+            } catch (RuntimeException e) {
+                error = ResourceUtils.accumulateException(error, e);
+            }
+        }
+
+        final RuntimeException texError = error;
+        try {
+            ExecutorUtils.submitIfThread(getGlExecutor(), () -> {
+                RuntimeException fboError = ResourceUtils.closeDelayError(toClose);
+                RuntimeException merged = ResourceUtils.accumulateException(texError, fboError);
+                if (merged != null) throw merged;
+            });
+        } finally {
+            texturePool.close();
+        }
     }
 
     /**
@@ -356,7 +410,7 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
     /**
      * 一个纹理槽位。管一张多层纹理，为每层创建一个 FBO。
      */
-    private final static class TextureSlot {
+    private final static class TextureSlot  implements AutoCloseable{
         private final GLTexture            texture;
         private final List<GLFramebuffer>  fbos;
         private final Deque<GLFramebuffer> idle;
@@ -399,6 +453,14 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
 
         int idleCount() {
             return idle.size();
+        }
+
+        @Override
+        public void close() {
+            RuntimeException exception = ResourceUtils.closeDelayError(fbos);
+            if (exception != null) {
+                throw exception;
+            }
         }
     }
 }

@@ -668,7 +668,6 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         // ── 上传 ─────────────────────────────────────
 
         private void upload() {
-            long t0 = System.nanoTime();
 
             GLAtlas atlas = handle.getGLAtlas();
             int tileSize = atlas.getLayout().getTileSize();
@@ -689,26 +688,14 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
             try {
                 FloatBuffer slice = src.slice();
                 slice.limit(needFloats);
-
-                long t1 = System.nanoTime();
                 PixelCodec.packPreAlpha(fmt, slice, pixelCount, tmp);
-                long t2 = System.nanoTime();
 
                 tmp.flip();
                 // 行序翻转，转gl座标系，y向上
                 BufferUtils.flipRows(
                         tmp, tileSize,
                         tileSize * fmt.internalBytesPerPixel());
-                long t3 = System.nanoTime();
-
                 handle.upload(tmp);
-                long t4 = System.nanoTime();
-
-                System.out.println("[tile-upload] size=" + tileSize
-                        + " pack=" + (t2 - t1) / 1000 + "us"
-                        + " flip=" + (t3 - t2) / 1000 + "us"
-                        + " glUpload=" + (t4 - t3) / 1000 + "us"
-                        + " total=" + (t4 - t0) / 1000 + "us");
             } finally {
                 MemoryUtil.memFree(tmp);
             }

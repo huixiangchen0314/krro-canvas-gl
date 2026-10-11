@@ -7,7 +7,7 @@ import static org.lwjgl.opengl.GL32.glFramebufferTextureLayer;
  * 离屏帧缓冲：把渲染输出到纹理的某一层。
  *
  * <p><b>借用语义</b>：FBO 只借用颜色纹理，不持有其所有权。
- * {@link #release()} 只删除 FBO 对象，不释放纹理。纹理的生命周期
+ * {@link #close()} 只删除 FBO 对象，不释放纹理。纹理的生命周期
  * 由创建它的一方管理。
  *
  * <h2>颜色附着</h2>
@@ -29,7 +29,7 @@ import static org.lwjgl.opengl.GL32.glFramebufferTextureLayer;
  * <h2>线程契约</h2>
  * <b>所有方法必须在 GL 线程（current context）上调用。</b>
  */
-public final class GLFramebuffer {
+public final class GLFramebuffer implements AutoCloseable{
 
     private final int fbo;
     private final GLTexture colorAttachment;
@@ -136,7 +136,8 @@ public final class GLFramebuffer {
      * <p><b>不释放颜色纹理</b>——纹理所有权在调用方。调用方负责在
      * 所有借用它的 FBO 都释放后，再释放纹理。
      */
-    public void release() {
+    @Override
+    public void close() {
         if (released) return;
         glDeleteFramebuffers(fbo);
         released = true;

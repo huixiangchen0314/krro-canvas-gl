@@ -29,6 +29,8 @@ public final class CompositePlanner {
             GLFramebuffer fboB,
             Set<Long> dirtyTiles) {
 
+        long t0 = System.nanoTime();
+
         int viewWidth  = context.getViewWidth();
         int viewHeight = context.getViewHeight();
         int tileSize   = context.getTileSize();
@@ -66,6 +68,8 @@ public final class CompositePlanner {
         ViewTileInfo viewTileInfo = buildViewGrid(
                 dirtyList, viewWidth, viewHeight, tileSize);
 
+        long t1 = System.nanoTime();   // 准备工作完成
+
         // ── 按 shader 分组 ──
         ShaderDrawBundler bundler = new TextureCountLimitDrawBundler(
                 MockShaderDrawBundler.INSTANCE,
@@ -75,6 +79,8 @@ public final class CompositePlanner {
         if (bundles.isEmpty()) {
             return null;
         }
+
+        long t2 = System.nanoTime();   // bundle 分组完成
 
         // ── 每批：注入 backdrop，收集可见瓦片 ──
         int maxSingleTiles = 0;
@@ -105,6 +111,8 @@ public final class CompositePlanner {
             return null;
         }
 
+        long t3 = System.nanoTime();   // 投影完成
+
         // ── 收集每批瓦片需求 + 全局并集 ──
         List<Set<Tile>> demandPerBatch = new ArrayList<>(batchBundles.size());
         Set<Tile> allDemands = new HashSet<>();
@@ -117,6 +125,8 @@ public final class CompositePlanner {
             allDemands.addAll(demand);
         }
 
+        long t4 = System.nanoTime();   // demand 收集完成
+
         // ── 确保 atlas 有足够空闲槽位 ──
         int needTiles = Math.min(minSingleDrawnTiles, maxSingleTiles);
 
@@ -125,26 +135,26 @@ public final class CompositePlanner {
 
         // 逆序降级：从最后一批开始，逐批解除保留
         if (ensured < needTiles) {
-            // 满足需求，或者仅仅剩下一个批次
             for (int b = demandPerBatch.size() - 1; b > 1 && ensured < needTiles; b--) {
                 allDemands.removeAll(demandPerBatch.get(b));
                 ensured = page.ensureSlotsKeep(needTiles, allDemands);
             }
         }
 
+        long t5 = System.nanoTime();   // 槽位确保完成
 
         GLAtlas[] atlases = page.getAtlases();
         GLTexture texA = fboA.getColorAttachment();
         GLTexture texB = fboB.getColorAttachment();
 
-
         List<ShaderDraw> draws = new ArrayList<>();
+        int splitCount = 0;
+
         for (ShaderBatchBundle batchBundle : batchBundles) {
             Shader shader;
             List<ILayer> batchLayers = batchBundle.bundle.getLayers();
             String shaderKey = batchBundle.bundle.getShaderKey();
             ShaderLayerTileSet tileSet = batchBundle.tileSet;
-
 
             // ── 本批次实际用到的外部纹理（非 atlas） ──
             Set<GLTexture> batchTextures = LayerUtils.collectTextures(batchLayers);
@@ -160,73 +170,80 @@ public final class CompositePlanner {
                 }
             }
 
-            // acquire2Excluding 保证 texA / texB 不在 batchTextures 中，
-            // 无条件追加即可。
             GLBindable[] bindablesA = appendBindable(bindables, baseLen, texA);
             GLBindable[] bindablesB = appendBindable(bindables, baseLen, texB);
-
 
             List<ShaderLayerTileSet> tileSets = new ArrayList<>();
             List<ShaderLayerTileRef> tiles = tileSet.layerTileRefs;
             int tileCount = tiles.size();
-            if (tileCount < 1){
+            if (tileCount < 1) {
                 continue;
             }
-            if (tileCount <= ensured
-                    // 无空闲瓦片，就只能全清，全划分了，虽然不太可能
-                    || ensured == 0){
+            if (tileCount <= ensured || ensured == 0) {
                 tileSets.add(tileSet);
-            }else {
-                // 批次划分，总是用尽确保的容量
+            } else {
                 ArrayList<ShaderLayerTileRef> tileRefs = new ArrayList<>(ensured);
                 int preBatch = 0;
                 int uploaded = 0;
                 for (int idx = 0; idx < tileCount; idx++) {
                     if (tiles.get(idx).tile.queryData(GLTile.class) != null) {
-                        uploaded ++;
+                        uploaded++;
                     }
-                    // 已经是gpu的的不占用批次
                     int batch = (idx - uploaded) / ensured;
                     if (batch > preBatch) {
                         preBatch = batch;
                         tileSets.add(tileSet.withRefs(tileRefs));
                         tileRefs = new ArrayList<>();
                     }
-
                     tileRefs.add(tiles.get(idx));
                 }
-                // 一定会有残留批次
                 tileSets.add(tileSet.withRefs(tileRefs));
             }
-
+            splitCount += tileSets.size();
 
             // Shader 构建 策略
             for (ShaderLayerTileSet tilesToDraw : tileSets) {
                 GLBindable[] resolvedBundables;
                 ShaderFactoryContext factoryContext;
 
-                if (draws.isEmpty()){
+                if (draws.isEmpty()) {
                     resolvedBundables = bindables;
                 } else {
-                    if (draws.size() % 2 == 1){
+                    if (draws.size() % 2 == 1) {
                         resolvedBundables = bindablesA;
                         TileProjector.projectLayerIntoFirst(fboALayer, dirtyList, tileSize, tilesToDraw);
-                    }else {
+                    } else {
                         resolvedBundables = bindablesB;
                         TileProjector.projectLayerIntoFirst(fboBLayer, dirtyList, tileSize, tilesToDraw);
                     }
                 }
                 factoryContext = new ShaderFactoryContext(tilesToDraw, viewTileInfo, resolvedBundables, context);
 
-                if (Objects.equals(shaderKey, Blends.NORMAL)){
+                if (Objects.equals(shaderKey, Blends.NORMAL)) {
                     shader = SimpleNormalShaderFactory.INSTANCE.create(factoryContext);
-                }else {
+                } else {
                     throw new IllegalArgumentException("shader keys must match");
                 }
 
                 draws.add(new ShaderDraw(shader, resolvedBundables));
             }
         }
+
+        long t6 = System.nanoTime();
+
+        System.out.println("[plan]"
+                + " layers=" + layers.size()
+                + " dirty=" + dirtyTiles.size()
+                + " batches=" + batchBundles.size()
+                + " draws=" + draws.size()
+                + " splits=" + splitCount
+                + " | prep=" + (t1 - t0) / 1_000_000 + "ms"
+                + " bundle=" + (t2 - t1) / 1_000_000 + "ms"
+                + " project=" + (t3 - t2) / 1_000_000 + "ms"
+                + " demand=" + (t4 - t3) / 1_000_000 + "ms"
+                + " ensure=" + (t5 - t4) / 1_000_000 + "ms"
+                + " build=" + (t6 - t5) / 1_000_000 + "ms"
+                + " | total=" + (t6 - t0) / 1_000_000 + "ms");
 
         return CompositeRequest.of(context,
                 viewTileInfo,
