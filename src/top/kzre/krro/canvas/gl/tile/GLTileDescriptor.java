@@ -22,7 +22,7 @@ public final class GLTileDescriptor {
     // ═══════════════════════════════════════════════
     // 字段
     // ═══════════════════════════════════════════════
-
+    private final int unit;
     /** texture array 中的层索引。 */
     private final int layer;
 
@@ -39,8 +39,9 @@ public final class GLTileDescriptor {
     // 构造
     // ═══════════════════════════════════════════════
 
-    private GLTileDescriptor(int layer, int tileSize,
+    private GLTileDescriptor(int unit, int layer, int tileSize,
                              float u0, float v0) {
+        this.unit = unit;
 
         this.layer    = layer;
         this.tileSize = tileSize;
@@ -55,16 +56,16 @@ public final class GLTileDescriptor {
     /**
      * 标准构造：一层一块 tile，uv 起点为 (0, 0)。
      */
-    public static GLTileDescriptor of(int layer, int tileSize) {
-        return new GLTileDescriptor(layer, tileSize, 0f, 0f);
+    public static GLTileDescriptor of(int unit, int layer, int tileSize) {
+        return new GLTileDescriptor(unit, layer, tileSize, 0f, 0f);
     }
 
     /**
      * 完整构造：指定层内 uv 起点（用于一层多块 tile 的子区域）。
      */
-    public static GLTileDescriptor of(int layer, int tileSize,
+    public static GLTileDescriptor of(int unit, int layer, int tileSize,
                                       float u0, float v0) {
-        return new GLTileDescriptor(layer, tileSize, u0, v0);
+        return new GLTileDescriptor(unit, layer, tileSize, u0, v0);
     }
 
     // ═══════════════════════════════════════════════
@@ -83,9 +84,14 @@ public final class GLTileDescriptor {
     @Override
     public String toString() {
         return "GLTileDescriptor{"
+                + "unit=" + unit
                 + ", layer=" + layer
                 + ", tileSize=" + tileSize
                 + ", uv0=[" + u0 + "," + v0 + "]"
                 + '}';
+    }
+
+    public int getUnit() {
+        return unit;
     }
 }

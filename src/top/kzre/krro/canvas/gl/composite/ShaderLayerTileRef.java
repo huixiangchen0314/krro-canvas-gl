@@ -15,4 +15,21 @@ public final class ShaderLayerTileRef {
         this.layerTableIndex = layerTableIndex;
 
     }
+
+    /** 瓦片所在的画布。 */
+    public TiledCanvas getCanvas() { return canvas; }
+
+    /** 瓦片对象本身。 */
+    public Tile getTile() { return tile; }
+
+    /** 该瓦片所属图层在 layerTable 中的条目下标。 */
+    public int getLayerTableIndex() { return layerTableIndex; }
+
+    @Override
+    public String toString() {
+        return "ShaderLayerTileRef{"
+                + "layer=" + layerTableIndex
+                + ", tile=" + tile
+                + '}';
+    }
 }

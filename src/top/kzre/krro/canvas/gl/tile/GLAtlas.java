@@ -26,8 +26,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <pre>
  *   layer = index / tilesPerLayer
  *   local = index % tilesPerLayer
- *   col   = local % tilesPerEdge
- *   row   = local / tilesPerEdge
+ *   col   = local % tilesPerRow
+ *   row   = local / tilesPerRow
  * </pre>
  * {@code allocated} 位图与 {@code tiles[]} 映射都以全局索引为下标。
  *
@@ -72,11 +72,12 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         if (layout == null) {
             throw new IllegalArgumentException("layout must not be null");
         }
-        if (texture.getWidth() != layout.getLayerSize()
-                || texture.getHeight() != layout.getLayerSize()) {
+        if (texture.getWidth() != layout.getLayerWidth()
+                || texture.getHeight() != layout.getLayerHeight()) {
             throw new IllegalArgumentException(
                     "texture dimensions " + texture.getWidth() + "x" + texture.getHeight()
-                            + " do not match layout layer size " + layout.getLayerSize());
+                            + " do not match layout layer size "
+                            + layout.getLayerWidth() + "x" + layout.getLayerHeight());
         }
         if (texture.getLayers() != layout.getLayers()) {
             throw new IllegalArgumentException(
@@ -148,9 +149,6 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
      * <p><b>跨 atlas 防护</b>：若 peer 是绑定到其他 atlas 的
      * {@link GLTileDataImpl}，抛异常。
      *
-     * <p><b>独占前置条件</b>：非 GLTileData 的 peer 必须满足
-     * {@code refCount == 1}。
-     *
      * <p><b>线程契约</b>：必须在 GL 线程上调用。
      *
      * @throws IllegalStateException atlas 已满、peer 跨 atlas、或 peer 非独占
@@ -170,15 +168,11 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
                             + peer.getClass().getName() + ")");
         }
 
-
         Handle handle = allocateHandle();
         GLTileDataImpl tile = new GLTileDataImpl(peer, handle);
         registerTile(handle.getIndex(), tile);
         return tile;
     }
-
-
-
 
     // ═══════════════════════════════════════════════
     // 精确分配
@@ -193,17 +187,13 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
      *   <li>{@code allocateAt} —— 精确指定位置，位置已被占用则抛异常</li>
      * </ul>
      *
-     * <p><b>前置条件</b>：peer 是 CPU 侧独占的 {@link TileData}
-     * （{@code refCount == 1}），不能是已包装的 {@link GLTileDataImpl}。
-     * 精确分配没有"幂等返回已有"的语义——位置对不上就是错误。
-     *
      * <p><b>线程契约</b>：必须在 GL 线程上调用。
      *
-     * @param layer texture array 层索引，{@code [0, layout.getLayers())}
-     * @param dataColumn   层内列坐标（u 方向），{@code [0, tilesPerEdge)}
-     * @param dataRow   层内行坐标（v 方向），{@code [0, tilesPerEdge)}
-     * @param peer  瓦片数据，独占
-     * @throws IndexOutOfBoundsException layer / dataColumn / dataRow 越界
+     * @param layer      texture array 层索引
+     * @param dataColumn 层内列坐标（u 方向）
+     * @param dataRow    层内行坐标（v 方向）
+     * @param peer       瓦片数据，独占
+     * @throws IndexOutOfBoundsException 索引越界
      * @throws IllegalStateException     peer 非独占、已是 GPU 瓦片、或槽位已占用
      */
     public GLTileDataImpl allocateAt(int layer, int dataColumn, int dataRow, TileData peer) {
@@ -221,27 +211,21 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         return tile;
     }
 
-
     /**
      * 从 startLayerIndex 开始，连续上传 count 个图层。
      *
      * <p><b>前置条件</b>：这 count 个层内的所有瓦片槽位必须已全部分配。
-     * 存在未分配的槽位抛异常。
      *
      * <p><b>总是上传</b>：不检查瓦片脏标记，无条件把 peer 数据重新 pack
      * 并上传到 GPU。
      *
      * <p><b>一次调用</b>：内部把 count 层的数据 pack 到一个连续 staging
      * 缓冲，用一次 {@code glTexSubImage3D(zoffset, depth=count)} 覆盖整段。
-     * 这是目前能实现的最小调用次数。
-     *
-     * <p><b>flip 封装</b>：行序翻转、pack、预乘等数据操作全部在此完成——
-     * 调用方只提供"哪些层"，无需关心字节布局。
      *
      * <p><b>线程契约</b>：必须在 GL 线程上调用。
      *
-     * @param startLayerIndex 起始层索引，{@code [0, layout.getLayers())}
-     * @param count           连续层数，{@code > 0}，{@code start + count ≤ layers}
+     * @param startLayerIndex 起始层索引
+     * @param count           连续层数
      * @throws IndexOutOfBoundsException 层范围越界
      * @throws IllegalArgumentException  count ≤ 0 或总字节数超 int 上限
      * @throws IllegalStateException     范围内有未分配的槽位
@@ -258,22 +242,21 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
                             + totalLayers + ")");
         }
 
-        int tilesPerLayer = layout.getTilesPerLayer();
-        int tileSize = layout.getTileSize();
-        int layerSize = layout.getLayerSize();
-        int bytesPerPixel = texture.getBytesPerPixel();
-        int bytesPerTile = tileSize * tileSize * bytesPerPixel;
-        int rowBytes = tileSize * bytesPerPixel;
-        long layerBytes = (long) layerSize * layerSize * bytesPerPixel;
-        long totalBytes = (long) count * layerBytes;
+        int tilesPerLayer  = layout.getTilesPerLayer();
+        int tileSize       = layout.getTileSize();
+        int layerWidth     = layout.getLayerWidth();
+        int layerHeight    = layout.getLayerHeight();
+        int bytesPerPixel  = texture.getBytesPerPixel();
+        int bytesPerTile   = tileSize * tileSize * bytesPerPixel;
+        int rowBytes       = tileSize * bytesPerPixel;
+        long layerBytes    = (long) layerWidth * layerHeight * bytesPerPixel;
+        long totalBytes    = (long) count * layerBytes;
         if (totalBytes > Integer.MAX_VALUE) {
             throw new IllegalArgumentException(
                     "batch too large: " + totalBytes + " bytes");
         }
 
         // ── 校验并快照 tile 引用（锁内）──
-        // 快照避免 pack 阶段与分配并发冲突——虽然 GL 线程串行，
-        // 但保持"引用稳定性"让 pack 逻辑只读。
         GLTileDataImpl[] batch = new GLTileDataImpl[count * tilesPerLayer];
         synchronized (lock) {
             int cursor = 0;
@@ -307,15 +290,15 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
                     GLTileDataImpl tile = batch[tileIdx++];
                     packTileInto(tile, staging, layerOffset,
                             tileTmp, fmt, needFloats,
-                            tileSize, layerSize, bytesPerPixel, rowBytes);
+                            tileSize, layerWidth, bytesPerPixel, rowBytes);
                 }
             }
             staging.flip();
 
-            // ── 一次上传 ──
+            // ── 一次上传 count 层 ──
             texture.uploadRegion3D(
                     startLayerIndex, count,
-                    0, 0, layerSize, layerSize,
+                    0, 0, layerWidth, layerHeight,
                     staging);
         } finally {
             MemoryUtil.memFree(tileTmp);
@@ -328,7 +311,7 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
      *
      * <p>整层空闲 = 该层所有槽位未分配。
      *
-     * @return 空闲层区间 {@code (startLayer, count)}；没有全空闲层时返回 null
+     * @return 空闲层区间；没有全空闲层时返回 {@link Range#EMPTY}
      */
     public Range findMaxContiguousFreeLayers() {
         synchronized (lock) {
@@ -376,8 +359,8 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
                               ByteBuffer staging, long layerOffset,
                               ByteBuffer tileTmp,
                               PixelFormat fmt, int needFloats,
-                              int tileSize, int layerSize, int bytesPerPixel,
-                              int rowBytes) {
+                              int tileSize, int layerWidth,
+                              int bytesPerPixel, int rowBytes) {
         // ── pack 到 tileTmp ──
         tileTmp.clear();
         FloatBuffer src = tile.peer.floatBuffer();
@@ -396,10 +379,9 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         BufferUtils.flipRows(tileTmp, tileSize, rowBytes);
 
         // ── 逐行拷贝到 staging ──
-        // tile 在层内的目标位置
         int px = tile.getDataColumn() * tileSize;
         int py = tile.getDataRow() * tileSize;
-        int layerRowBytes = layerSize * bytesPerPixel;
+        int layerRowBytes = layerWidth * bytesPerPixel;
 
         long srcBase = MemoryUtil.memAddress(tileTmp);
         long dstBase = MemoryUtil.memAddress(staging);
@@ -413,7 +395,6 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
             MemoryUtil.memCopy(srcRowAddr, dstRowAddr, rowBytes);
         }
     }
-
 
     /** 分配一个槽位，返回 Handle。不含 peer 绑定逻辑。 */
     private Handle allocateHandle() {
@@ -434,33 +415,34 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
 
     /** 把 (layer, dataColumn, dataRow) 编码为全局索引。越界抛异常。 */
     private int encodeIndex(int layer, int dataColumn, int dataRow) {
-        int layers        = layout.getLayers();
-        int tilesPerEdge  = layout.getTilesPerEdge();
-        int tilesPerLayer = layout.getTilesPerLayer();
+        int layers         = layout.getLayers();
+        int tilesPerRow    = layout.getTilesPerRow();
+        int tilesPerColumn = layout.getTilesPerColumn();
+        int tilesPerLayer  = layout.getTilesPerLayer();
 
         if (layer < 0 || layer >= layers) {
             throw new IndexOutOfBoundsException(
                     "layer " + layer + " out of [0, " + layers + ")");
         }
-        if (dataColumn < 0 || dataColumn >= tilesPerEdge) {
+        if (dataColumn < 0 || dataColumn >= tilesPerRow) {
             throw new IndexOutOfBoundsException(
-                    "dataColumn " + dataColumn + " out of [0, " + tilesPerEdge + ")");
+                    "dataColumn " + dataColumn + " out of [0, " + tilesPerRow + ")");
         }
-        if (dataRow < 0 || dataRow >= tilesPerEdge) {
+        if (dataRow < 0 || dataRow >= tilesPerColumn) {
             throw new IndexOutOfBoundsException(
-                    "dataRow " + dataRow + " out of [0, " + tilesPerEdge + ")");
+                    "dataRow " + dataRow + " out of [0, " + tilesPerColumn + ")");
         }
-        return layer * tilesPerLayer + dataRow * tilesPerEdge + dataColumn;
+        return layer * tilesPerLayer + dataRow * tilesPerRow + dataColumn;
     }
 
     /** 把全局索引解码为 Handle。 */
     private Handle decodeHandle(int index) {
         int tilesPerLayer = layout.getTilesPerLayer();
-        int tilesPerEdge  = layout.getTilesPerEdge();
+        int tilesPerRow   = layout.getTilesPerRow();
         int layer = index / tilesPerLayer;
         int local = index % tilesPerLayer;
-        int dataColumn   = local % tilesPerEdge;
-        int dataRow   = local / tilesPerEdge;
+        int dataColumn = local % tilesPerRow;
+        int dataRow    = local / tilesPerRow;
         return new Handle(index, layer, dataColumn, dataRow);
     }
 
@@ -503,18 +485,6 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
 
     /**
      * 把 tile 从 src 移到 dst。
-     *
-     * <p><b>语义</b>：
-     * <ol>
-     *   <li>在 dst 上分配一个新槽位</li>
-     *   <li>原地更新 tile 的 handle 和 descriptor</li>
-     *   <li>标记 tile 为脏——下次 {@code ensureUploaded} 从 peer 重传</li>
-     *   <li>释放 src 上的旧槽位</li>
-     * </ol>
-     *
-     * <p><b>不立即上传</b>——数据仍由 peer 持有，新层内容延迟到使用时填充。
-     *
-     * <p><b>所有权</b>：tile 实例不变，调用方引用继续有效。
      *
      * <p><b>线程契约</b>：必须在 GL 线程上调用。
      *
@@ -566,7 +536,6 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
 
     /**
      * 释放底层纹理。必须在 GL 线程上调用。幂等。
-     * 释放后所有已分配的 Handle 失效。
      */
     @Override
     public void close() {
@@ -589,9 +558,7 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         return capacity;
     }
 
-    /**
-     * 查询指定槽位是否已占用。
-     */
+    /** 查询指定槽位是否已占用。 */
     public boolean isOccupiedAt(int layer, int dataColumn, int dataRow) {
         int index = encodeIndex(layer, dataColumn, dataRow);
         synchronized (lock) {
@@ -606,52 +573,14 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
     /**
      * 瓦片槽位句柄。携带解码后的 {@code (layer, dataColumn, dataRow)}。
      *
-     * <h2>dataColumn / dataRow 的语义</h2>
-     *
-     * <p>这两个值描述"这块瓦片放在 atlas 纹理层的第几列、第几行"——
-     * 是 <b>atlas 数据布局坐标</b>，<b>没有方向语义</b>。
-     *
-     * <p>它们由线性槽位索引 {@code index} 解码而来：
+     * <p>{@code dataColumn} / {@code dataRow} 是 atlas 数据布局坐标，
+     * <b>没有方向语义</b>——由线性槽位索引解码而来：
      * <pre>
      *   layer      = index / tilesPerLayer
      *   local      = index % tilesPerLayer
-     *   dataColumn = local % tilesPerEdge
-     *   dataRow    = local / tilesPerEdge
+     *   dataColumn = local % tilesPerRow
+     *   dataRow    = local / tilesPerRow
      * </pre>
-     * 分配算法线性扫描空槽位，{@code dataRow} 只是"第几个空槽位落在第几
-     * 行"，与屏幕位置、图层网格没有任何对应关系。
-     *
-     * <h2>与带方向语义坐标的区别</h2>
-     *
-     * <p>项目里其他"行"坐标是带方向的——{@code canvas} 网格行 y 向下
-     * （顶行是 0），GL 纹理行 y 向上（底行是 0）。跨这两套坐标系的
-     * 转换需要在转换点显式翻转（{@code height - 1 - row}）。
-     *
-     * <p>{@code dataColumn} / {@code dataRow} <b>不属于任何一套</b>：
-     * <ul>
-     *   <li>作为纹理坐标传给 {@code glTexSubImage3D} 的 {@code (x, y)} 时——
-     *       直接乘 {@code tileSize}，不翻。它在此处被当作 GL 纹理坐标使用，
-     *       与数据的采样方向由 shader 侧保证一致</li>
-     *   <li>转成 {@code GLTileDescriptor} 的 uv 起点时——
-     *       {@code u = dataColumn / tilesPerEdge}、
-     *       {@code v = dataRow / tilesPerEdge}，同样不翻</li>
-     * </ul>
-     *
-     * <p>与其叫 {@code col / row} 容易让人误以为有方向，这里用
-     * {@code dataColumn / dataRow} 明确它是"数据放在哪一格"，方向由
-     * 使用它的上下文决定。
-     *
-     * <h2>生命周期</h2>
-     *
-     * <p>{@link #closed} 标记该 handle 是否仍然指向 atlas 中的有效槽位。
-     * {@link #close()} 将其置 false 并清空 atlas 中对应的位图和引用——
-     * 之后对该 handle 的任何操作要么是 no-op（{@code free} 幂等），
-     * 要么抛出异常（若校验）。
-     *
-     * <h2>线程契约</h2>
-     *
-     * <p>字段可变（{@code valid} 的翻转），访问完全在 GL 线程内——
-     * atlas 的分配、上传、释放路径全部由 GL 线程驱动。
      */
     private final class Handle {
         private final int index;
@@ -659,7 +588,6 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         private final int dataColumn;
         private final int dataRow;
 
-        /** 关闭标记。CAS 保证 check-then-act 原子——并发 close 只有一个成功。 */
         private final AtomicBoolean closed = new AtomicBoolean(false);
 
         Handle(int index, int layer, int dataColumn, int dataRow) {
@@ -681,13 +609,6 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
          * 关闭本槽位句柄。释放 atlas 中的槽位。
          *
          * <p><b>不可重入</b>——重复调用抛 {@link IllegalStateException}。
-         *
-         * <p><b>并发安全</b>：{@code closed} 是 {@link AtomicBoolean}，
-         * {@code close()} 走 CAS——多个线程同时调用只有一个成功翻转，
-         * 其余抛异常。不会出现两次 {@code freeTile}。
-         *
-         * <p>之前版本用 {@code if (!closed) return} 静默返回是写反了逻辑——
-         * 未关闭时不执行释放。当前版本语义是"恰好一次"。
          */
         void close() {
             if (!closed.compareAndSet(false, true)) {
@@ -699,6 +620,10 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
             freeTile(index);
         }
 
+        boolean isClosed() {
+            return closed.get();
+        }
+
         /** 上传本瓦片到层内的子矩形。 */
         void upload(ByteBuffer buffer) {
             if (closed.get()) {
@@ -708,13 +633,11 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
                                 + ", dataRow=" + dataRow);
             }
             int tileSize = layout.getTileSize();
-
             texture.uploadRegion(
                     layer,
                     dataColumn * tileSize,
                     dataRow * tileSize,
-                    tileSize,
-                    tileSize,
+                    tileSize, tileSize,
                     buffer);
         }
     }
@@ -729,34 +652,22 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         int getDataColumn();
         int getDataRow();
         boolean isDirty();
+        boolean isValid();
     }
 
     /**
      * GL 瓦片：{@link TileData} 的 GPU 装饰。
-     *
-     * <p><b>线程契约</b>：
-     * <ul>
-     *   <li>{@link #markDirty()} —— 任意线程</li>
-     *   <li>{@link #ensureUploaded()} /
-     *       {@link #getDescriptor()} / {@link #release()} —— GL 线程</li>
-     *   <li>其他 {@link TileData} 代理方法 —— 由 peer 契约决定</li>
-     * </ul>
-     *
-     * <p>内部字段 {@code handle} 不做同步——访问完全落在 GL 线程内，
-     * 由上述契约保证。
      */
     public static final class GLTileDataImpl
             implements TileData, GLTileData, GLTile, UploadableTile, VersionedTile {
         private final TileData peer;
-        /** 跨线程访问 */
         private final AtomicBoolean dirty = new AtomicBoolean(true);
         private GLAtlas.Handle handle;
-
-        /**
-         *代理的 refCount,与 peer 的引用计数分别处理
-         * 初始构造为1，调用工厂的TiledCanvas 持有
-         */
         private final AtomicInteger proxyRefCount = new AtomicInteger(1);
+
+        public int getProxyRefCount() {
+            return proxyRefCount.get();
+        }
 
         private GLTileDataImpl(TileData peer, GLAtlas.Handle handle) {
             this.peer   = peer;
@@ -774,48 +685,37 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         /**
          * 把 {@link Tile} 上的 GPU 形态换回 CPU 形态。
          *
-         * <p>如果 tile 当前持有 {@link GLTileDataImpl}：
-         * <ol>
-         *   <li>{@code tile.replaceData(peer)} —— 引用计数不变，
-         *       Tile 的持有从 GLTileData 换成 peer</li>
-         *   <li>{@code handle.free()} —— 显式释放 atlas 槽位</li>
-         * </ol>
-         *
-         * <p>如果 tile 为空，或不持有 GLTileData，静默返回。
-         *
          * <p><b>线程契约</b>：涉及 atlas 槽位释放，必须在 GL 线程上调用。
-         * 调用方需保证 tile 的 dataRef 在本方法执行期间不被并发修改。
-         *
-         * @param tile 目标瓦片，可为 null
          */
         public static boolean pageOut(Tile tile) {
             if (tile == null) return false;
             GLTileDataImpl gl = tile.queryData(GLTileDataImpl.class);
             if (gl == null) return false;
-            if (gl.proxyRefCount.get() != 1) {
-                throw new IllegalStateException("pageOut should called when tile exclusively hold tileData gl proxy");
+            int proxyRefCount = gl.proxyRefCount.get();
+            if (proxyRefCount != 1) {
+                throw new IllegalStateException(
+                        "pageOut should called when tile exclusively hold tileData gl proxy");
             }
             tile.replaceData(gl.peer);
-
             return true;
         }
 
         @Override
         public GLTileDescriptor getDescriptor() {
             GLAtlas atlas = handle.getGLAtlas();
-
             GLTiledTextureLayout layout = atlas.getLayout();
-            int edge = layout.getTilesPerEdge();
+
+            int tilesPerRow    = layout.getTilesPerRow();
+            int tilesPerColumn = layout.getTilesPerColumn();
+
             return GLTileDescriptor.of(
+                    atlas.texture.getUnit(),
                     handle.getLayer(),
                     layout.getTileSize(),
-                    (float) handle.getDataColumn() / edge,
-                    (float) handle.getDataRow() / edge);
+                    (float) handle.getDataColumn() / tilesPerRow,
+                    (float) handle.getDataRow()    / tilesPerColumn);
         }
 
-        /**
-         * 重新绑定到新槽位。只在 GL 线程调用。
-         */
         private void rebind(Handle newHandle) {
             this.handle = newHandle;
             this.dirty.set(true);
@@ -853,10 +753,8 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
 
         @Override
         public int release() {
-
             int after  = peer.release();
             boolean free = proxyRefCount.decrementAndGet() == 0;
-
             if (free) {
                 handle.close();
             }
@@ -866,7 +764,6 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         // ── 上传 ─────────────────────────────────────
 
         private void upload() {
-
             GLAtlas atlas = handle.getGLAtlas();
             int tileSize = atlas.getLayout().getTileSize();
             int pixelCount = tileSize * tileSize;
@@ -889,7 +786,6 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
                 PixelCodec.packPreAlpha(fmt, slice, pixelCount, tmp);
 
                 tmp.flip();
-                // 行序翻转，转gl座标系，y向上
                 BufferUtils.flipRows(
                         tmp, tileSize,
                         tileSize * fmt.internalBytesPerPixel());
@@ -899,30 +795,12 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
             }
         }
 
-        @Override
-        public GLAtlas getAtlas() {
-            return handle.getGLAtlas();
-        }
-
-        @Override
-        public int getLayer() {
-            return handle.getLayer();
-        }
-
-        @Override
-        public int getDataColumn() {
-            return handle.getDataColumn();
-        }
-
-        @Override
-        public int getDataRow() {
-            return handle.getDataRow();
-        }
-
-        @Override
-        public boolean isDirty() {
-            return dirty.get();
-        }
+        @Override public GLAtlas getAtlas()      { return handle.getGLAtlas(); }
+        @Override public int     getLayer()      { return handle.getLayer(); }
+        @Override public int     getDataColumn() { return handle.getDataColumn(); }
+        @Override public int     getDataRow()    { return handle.getDataRow(); }
+        @Override public boolean isDirty()       { return dirty.get(); }
+        @Override public boolean isValid()       { return !handle.isClosed(); }
 
         @Override
         public String toString() {
@@ -938,6 +816,4 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
                     + "}";
         }
     }
-
-
 }

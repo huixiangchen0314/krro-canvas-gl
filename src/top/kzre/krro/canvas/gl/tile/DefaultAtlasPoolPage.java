@@ -36,9 +36,29 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
         Iterator<Tile> it = liftedTiles.iterator();
         while (it.hasNext()) {
             Tile tile = it.next();
-            if (!isOutdate(tile)) {
+            if (!isOutdate(tile)) continue;
+
+            GLAtlas.GLTileDataImpl gl =
+                    tile.queryData(GLAtlas.GLTileDataImpl.class);
+            if (gl == null) {
+                // 已是 CPU 形态——从队列移除
+                it.remove();
                 continue;
             }
+
+            if (!gl.isValid()) {
+                // 死代理——release 归零时 handle 已关闭，槽位已释放。
+                // Tile 已放弃所有权，对象已死——直接移除队列条目。
+                it.remove();
+                continue;
+            }
+
+            if (gl.getProxyRefCount() > 1) {
+                // 外部还持有——跳过，等它释放后下次再清
+                continue;
+            }
+
+            // 有效且独占——正常换出
             GLAtlas.GLTileDataImpl.pageOut(tile);
             it.remove();
         }
@@ -66,12 +86,25 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
         Iterator<Tile> it = liftedTiles.iterator();
         while (it.hasNext() && extraNeed > 0) {
             Tile tile = it.next();
-            if (keepTiles != null && keepTiles.contains(tile)) {
+            if (keepTiles != null && keepTiles.contains(tile)) continue;
+            if (!isOutdate(tile)) continue;
+
+            GLAtlas.GLTileDataImpl gl =
+                    tile.queryData(GLAtlas.GLTileDataImpl.class);
+            if (gl == null) {
+                it.remove();
                 continue;
             }
-            if (!isOutdate(tile)) {
+            if (!gl.isValid()) {
+                // 死代理——直接移除
+                it.remove();
                 continue;
             }
+            if (gl.getProxyRefCount() > 1) {
+                // 外部持有——跳过，不驱逐
+                continue;
+            }
+
             if (GLAtlas.GLTileDataImpl.pageOut(tile)) {
                 extraNeed--;
                 currentFree++;
@@ -84,12 +117,25 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
             it = liftedTiles.iterator();
             while (it.hasNext() && extraNeed > 0) {
                 Tile tile = it.next();
-                if (keepTiles != null && keepTiles.contains(tile)) {
+                if (keepTiles != null && keepTiles.contains(tile)) continue;
+                if (isOutdate(tile)) continue;  // 脏的已在第一遍处理
+
+                GLAtlas.GLTileDataImpl gl =
+                        tile.queryData(GLAtlas.GLTileDataImpl.class);
+                if (gl == null) {
+                    it.remove();
                     continue;
                 }
-                if (isOutdate(tile)) {
-                    continue;  // 脏的已在第一遍处理完
+
+                if (!gl.isValid()) {
+                    it.remove();
+                    continue;
                 }
+
+                if (gl.getProxyRefCount() > 1) {
+                    continue;
+                }
+
                 if (GLAtlas.GLTileDataImpl.pageOut(tile)) {
                     extraNeed--;
                     currentFree++;
@@ -100,6 +146,8 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
 
         return currentFree;
     }
+
+
 
     /**
      * 瓦片是否脏——脏 = GPU 数据已过期，驱逐代价最小。

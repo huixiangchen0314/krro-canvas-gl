@@ -106,6 +106,10 @@ public final class ShaderLayerTileSet {
         this.layerTileIndex = new HashMap<>();
     }
 
+    public List<ShaderLayerTileRef> getLayerTileRefs() {
+        return layerTileRefs;
+    }
+
     /**
      * 创建一个空的瓦片集合。
      *

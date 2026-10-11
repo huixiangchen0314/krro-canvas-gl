@@ -375,7 +375,7 @@ public final class GLTexture implements GLBindable{
     // ═══════════════════════════════════════════════
     // 绑定
     // ═══════════════════════════════════════════════
-
+    private int unit = -1;
     /**
      * 绑定到指定纹理单元。
      *
@@ -387,6 +387,8 @@ public final class GLTexture implements GLBindable{
      */
     @Override
     public void bind(int unit) {
+        this.unit = unit;
+
         checkAlive();
         glActiveTexture(GL_TEXTURE0 + unit);
         glBindTexture(GL_TEXTURE_2D_ARRAY, handle);
@@ -475,5 +477,9 @@ public final class GLTexture implements GLBindable{
                 ", fmt=" + pixelFormat +
                 ", released=" + released +
                 '}';
+    }
+
+    public int getUnit() {
+        return unit;
     }
 }

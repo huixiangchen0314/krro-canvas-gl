@@ -12,43 +12,20 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-public final class SimpleNormalShaderFactory extends BaseShaderFactory {
-    public static final BaseShaderFactory INSTANCE = new SimpleNormalShaderFactory();
+public final class SimpleNormalShaderFactory implements ShaderFactory {
+    public static final ShaderFactory INSTANCE = new SimpleNormalShaderFactory();
 
     @Override
     public Shader create(ShaderFactoryContext context) {
         GLBindable[] bindables = context.getBindables();
         GLCompositeContext compositeContext = context.getContext();
-        ViewTileInfo grid = context.getGrid();
+        ViewTileInfo viewInfo = context.getGrid();
         ShaderLayerTileSet tileSet = context.getTileSet();
         int tileSize = context.getContext().getTileSize();
         GLProgramCache programs = compositeContext.getProgramCache();
 
-        int viewWidth = compositeContext.getViewWidth();
-        int viewHeight = compositeContext.getViewHeight();
-
-        List<TextureTileSlot> slots = new ArrayList<>(tileSet.layerTileRefs.size());
-        Map<TextureTileSlot, TileRef> slotMap = allocateSlots(tileSet.layerTileRefs, bindables, slots);
-
-        ShaderPackedBuffer packed = packBuffers(tileSet, slots, bindables, grid);
-
-        TileBufferGroup group = new TileBufferGroup(
-                ShaderConstants.TEXTURE_UNIT_TILE_TABLE,
-                ShaderConstants.TEXTURE_UNIT_LAYER_TABLE,
-                ShaderConstants.TEXTURE_UNIT_INDEX_TABLE,
-                packed.offsets,
-                packed.counts,
-                packed.layerTable,
-                packed.layerEntryCount,
-                packed.tileTable,
-                packed.tileEntryCount,
-                packed.indexList,
-                packed.indexCount,
-                slotMap);
-
-
         GLProgram program = programs.get(Blends.NORMAL);
         return new NormalShader(
-                program, group, viewWidth, viewHeight, tileSize, bindables);
+                program, tileSet, viewInfo, tileSize, bindables);
     }
 }

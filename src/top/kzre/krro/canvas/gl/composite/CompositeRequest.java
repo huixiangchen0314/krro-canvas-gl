@@ -41,14 +41,16 @@ public final class CompositeRequest {
     private final GLFramebuffer fboA;
     private final GLFramebuffer fboB;
     private final GLCompositeContext context;
+
+
     private CompositeRequest(GLCompositeContext context, ViewTileInfo viewTileInfo, List<ShaderDraw> draws, AtlasPoolPage page,
                              GLFramebuffer fboA,
                              GLFramebuffer fboB) {
-        this.page         = page;
+        this.page = page;
         this.viewTileInfo = viewTileInfo;
         this.draws = draws;
-        this.fboA         = fboA;
-        this.fboB         = fboB;
+        this.fboA = fboA;
+        this.fboB = fboB;
         this.context = context;
     }
 

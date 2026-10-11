@@ -9,7 +9,6 @@ import top.kzre.krro.canvas.gl.resource.PixelCodec;
 import top.kzre.krro.canvas.gl.resource.PixelFormat;
 import top.kzre.krro.canvas.gl.util.BufferUtils;
 import top.kzre.krro.canvas.gl.util.ExecutorUtils;
-import top.kzre.krro.core.util.AsyncExecutor;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.*;
 
@@ -32,21 +31,26 @@ import java.util.concurrent.atomic.AtomicInteger;
  *       完整纹理归还给池，层范围视图调用借用回调</li>
  * </ul>
  *
+ * <p><b>非整除尺寸</b>：纹理尺寸不要求是 tileSize 的整数倍——
+ * 例如 1920×1080 配 64px 瓦片时 {@code tilesPerRow=30}、
+ * {@code tilesPerColumn=17}（覆盖到 1088，超出部分留空）。网格
+ * 计算用向上取整。
+ *
  * <p><b>线程契约</b>：{@code bind} 涉及 GL 调用，必须在 GL 线程。
  * 其他方法（访问器）任意线程可读。视图归零的触发可能在任意线程，
  * 由 {@code AbstractTileData} 的引用计数机制驱动。
  */
 public abstract class AbstractGLTiledTexture implements GLBindable {
 
-    protected final GLTexture      texture;
-    protected final TiledCanvas    canvas;
+    protected final GLTexture       texture;
+    protected final TiledCanvas     canvas;
     protected final SerialExecutor  glExecutor;
+
+    /** 纹理布局——构造时确定，不可变。 */
+    private final GLTiledTextureLayout layout;
 
     /** 活跃视图计数。归零时触发 onAllViewsReleased。 */
     private final AtomicInteger activeTiles = new AtomicInteger(0);
-
-    /** 当前纹理单元。-1 表示尚未绑定。 */
-    protected volatile int unit = -1;
 
     /** 是否已释放（视图计数归零后自动置位）。 */
     protected volatile boolean released = false;
@@ -62,16 +66,6 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
         if (glExecutor == null) {
             throw new IllegalArgumentException("glExecutor must not be null");
         }
-        if (texture.getWidth() % tileSize != 0) {
-            throw new IllegalArgumentException(
-                    "texture width " + texture.getWidth()
-                            + " must be a multiple of tileSize " + tileSize);
-        }
-        if (texture.getHeight() % tileSize != 0) {
-            throw new IllegalArgumentException(
-                    "texture height " + texture.getHeight()
-                            + " must be a multiple of tileSize " + tileSize);
-        }
 
         int channels = PixelCodec.channels(texture.getPixelFormat());
         float[] defaultPixel = new float[channels];   // 全零
@@ -79,21 +73,12 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
         this.texture    = texture;
         this.glExecutor = glExecutor;
         this.canvas     = new TiledCanvas(tileSize, defaultPixel);
+        this.layout     = GLTiledTextureLayout.fromPixelSize(
+                texture.getLayers(),
+                tileSize,
+                texture.getWidth(),
+                texture.getHeight());
     }
-    /**
-     * 每行瓦片数——X 方向。
-     */
-    int tilesPerRow() {
-        return texture.getWidth() / canvas.getTileSize();
-    }
-
-    /**
-     * 每列瓦片数——Y 方向。
-     */
-    int tilesPerColumn() {
-        return texture.getHeight() / canvas.getTileSize();
-    }
-
 
     /**
      * 注入层范围的视图。子类构造时调用。
@@ -102,8 +87,8 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
      * @param layerCount  层数
      */
     protected final void populateCanvas(int layerOffset, int layerCount) {
-        int tilesPerRow    = tilesPerRow();
-        int tilesPerColumn = tilesPerColumn();
+        int tilesPerRow    = layout.getTilesPerRow();
+        int tilesPerColumn = layout.getTilesPerColumn();
 
         // TODO FIX 宽度编码。
         for (int i = 0; i < layerCount; i++) {
@@ -114,7 +99,9 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
                     activeTiles.incrementAndGet();
                     int finalCanvasColumn = canvasCol;
                     int finalCanvasRow = canvasRow;
-                    canvas.replaceTile(canvasCol, ty, ()->new GLTextureTileDataImpl(this, layer, finalCanvasColumn, finalCanvasRow));
+                    canvas.replaceTile(canvasCol, ty,
+                            () -> new GLTextureTileDataImpl(this, layer,
+                                    finalCanvasColumn, finalCanvasRow));
                 }
             }
         }
@@ -132,6 +119,9 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
      */
     public TiledCanvas asCanvas() { return canvas; }
 
+    /** 纹理布局。 */
+    public GLTiledTextureLayout getLayout() { return layout; }
+
     @Override
     public void bind(int unit) {
         if (unit < 0) {
@@ -140,12 +130,11 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
         if (released) {
             throw new IllegalStateException("view has been released");
         }
-        this.unit = unit;
         this.texture.bind(unit);
     }
 
     /** 当前纹理单元。-1 表示尚未绑定。 */
-    public int getUnit() { return unit; }
+    public int getUnit() { return texture.getUnit(); }
 
     /** 是否已释放（视图计数归零后自动置位）。 */
     public boolean isReleased() { return released; }
@@ -176,8 +165,6 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
 
     /**
      * 所有视图归零时的动作。子类实现。
-     *
-     * <p>完整纹理归零时归还底层纹理；层范围视图归零时通知借用方。
      */
     protected abstract void onAllViewsReleased();
 
@@ -203,33 +190,7 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
      * 是 <b>canvas 逻辑网格坐标</b>，<b>带方向语义</b>：{@code canvasRow = 0}
      * 是 canvas 的<b>顶行</b>，y 向下增长。
      *
-     * <p>它和屏幕坐标系一致——canvas 网格、脏区、tileTable 里的
-     * {@code tileX/tileY} 全都用这一套（y 向下）。合成时 shader 里的
-     * {@code localUv.y} 也按这个方向增长。
-     *
-     * <h2>与 GL 纹理坐标的区别</h2>
-     *
-     * <p>GL 纹理原点在左下，v 向上——{@code glTexSubImage3D} /
-     * {@code glReadPixels} 的 {@code y} 参数是 GL 坐标。
-     *
-     * <p>本类的 {@code canvasRow} <b>不能直接</b>乘 {@code tileSize} 传给
-     * GL：
-     * <ul>
-     *   <li>{@code downloadTo} 里——{@code glReadPixels} 期望 GL 坐标，
-     *       需要 {code glRow = tilesPerColumn - 1 - canvasRow}</li>
-     *   <li>{@code getDescriptor} 里——{@code v0} 若是 GL 纹理 uv
-     *       起点，同样需要翻</li>
-     * </ul>
-     *
-     * <p>对比 {@code GLAtlas.Handle} 的 {@code dataColumn / dataRow}——
-     * 那是 atlas 内部槽位坐标，<b>无方向语义</b>，直接传给 GL 不翻。
-     * 本类是 canvas 网格坐标，<b>带方向</b>，跨到 GL 时要翻。
-     *
-     * <h2>字段命名</h2>
-     *
-     * <p>用 {@code canvasColumn / canvasRow} 而非裸 {@code column / row}——
-     * 提示读代码的人"这是 canvas 网格坐标，不是 atlas 槽位，也不是 GL
-     * 纹理坐标"。跨坐标系转换点必须显式翻转，不能沿用同一个名字。
+     * <p>GL 纹理原点在左下，v 向上。跨到 GL 需要翻一次。
      *
      * <h2>线程契约</h2>
      *
@@ -276,22 +237,25 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
 
         @Override
         public GLTileDescriptor getDescriptor() {
-            int unit = owner.getUnit();
+            int unit = owner.texture.getUnit();
             if (unit < 0) {
                 throw new IllegalStateException(
                         "unit not assigned; call bind(n) first");
             }
-            int tilesPerRow    = owner.tilesPerRow();
-            int tilesPerColumn = owner.tilesPerColumn();
+            GLTiledTextureLayout layout = owner.getLayout();
+            int tilesPerRow    = layout.getTilesPerRow();
+            int tilesPerColumn = layout.getTilesPerColumn();
 
             // canvasRow 是 canvas 网格行（y 向下）；
             // v0 是 GL 纹理 v 起点（y 向上）——翻
             int glRow = glRow();
 
             return GLTileDescriptor.of(
-                    layer, owner.tileSize(),
-                    (float) canvasColumn / tilesPerRow,       // u0 —— 两套 x 一致
-                    (float) glRow        / tilesPerColumn);   // v0 —— 翻
+                    unit,
+                    layer,
+                    owner.tileSize(),
+                    (float) canvasColumn / tilesPerRow,   // u0 —— x 方向不翻
+                    (float) glRow / tilesPerColumn); // v0 —— y 方向翻
         }
 
         @Override
@@ -322,9 +286,8 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
             int glRow = glRow();
 
             // ── GL 线程：只做 readback ──
-
             return ExecutorUtils.submitIfThread(
-                    owner.glExecutor,
+                            owner.glExecutor,
                             () -> owner.texture().downloadRegion(
                                     layer,
                                     canvasColumn * tileSize,
@@ -360,7 +323,7 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
 
         private int glRow() {
             // canvas row → GL row
-            return owner.tilesPerColumn() - 1 - canvasRow;
+            return owner.getLayout().getTilesPerColumn() - 1 - canvasRow;
         }
 
         @Override
@@ -387,6 +350,6 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
 
         @Override public float[]    getPixels()    { throw new UnsupportedOperationException("GPU-only"); }
         @Override public FloatBuffer floatBuffer() { throw new UnsupportedOperationException("GPU-only"); }
-        @Override public TileData copy()        { throw new UnsupportedOperationException("cannot be copied"); }
+        @Override public TileData   copy()         { throw new UnsupportedOperationException("cannot be copied"); }
     }
 }

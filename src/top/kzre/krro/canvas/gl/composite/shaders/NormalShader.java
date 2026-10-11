@@ -1,14 +1,15 @@
 package top.kzre.krro.canvas.gl.composite.shaders;
 
-import top.kzre.krro.canvas.gl.composite.AbstractShader;
-import top.kzre.krro.canvas.gl.composite.ShaderConstants;
-import top.kzre.krro.canvas.gl.composite.TileBufferGroup;
+import top.kzre.krro.canvas.gl.composite.*;
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLProgram;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.tile.GLAtlas;
-import top.kzre.krro.canvas.gl.tile.GLTiledTextureLayout;
+import top.kzre.krro.canvas.gl.tile.GLTile;
+import top.kzre.krro.canvas.gl.tile.GLTileDescriptor;
+import top.kzre.krro.util.tile.Tile;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -18,10 +19,10 @@ import java.util.List;
  * <p><b>uniform 布局</b>：
  * <ul>
  *   <li>{@code uViewport} / {@code uTileSize} —— 几何参数（顶点着色器）</li>
- *   <li>{@code uTileScale} —— {@code tileSize / texLayerSize}（片段着色器）</li>
+ *   <li>{@code uTextureScales} —— 每个 bindable 的 (1/edgeU, 1/edgeV)</li>
  *   <li>{@code uTileTable} / {@code uLayerTable} / {@code uIndexTable}
  *       —— 本 group 的三张 buffer 表单元</li>
- *   <li>{@code uTexture0..3} —— 纹理采样器，指向 unit 0..3</li>
+ *   <li>{@code uTexture0..N} —— 纹理采样器，指向 unit 0..N</li>
  * </ul>
  *
  * <h2>纹理单元约定</h2>
@@ -35,43 +36,41 @@ import java.util.List;
  * atlas 是 CPU 侧的资源组织方式，不在 shader 的语义里。
  */
 public final class NormalShader extends AbstractShader {
+
     /** 单 group 的实例 attribute location。 */
     private static final int INSTANCE_LOCATION = 1;
 
-    private final TileBufferGroup     group;
-    private final int                 viewWidth;
-    private final int                 viewHeight;
+    private final ShaderLayerTileSet tileSet;
+    private final ViewTileInfo viewTileInfo;
     private final GLBindable[] bindables;
     private final int tileSize;
+
     /**
-     * @param program    已编译的 GLProgram
-     * @param group      本 shader 使用的瓦片数据
-     * @param viewWidth  视口宽（像素，已对齐到 tileSize 倍数）
-     * @param viewHeight 视口高（像素，已对齐到 tileSize 倍数）
-     * @param bindables     纹理布局，提供 tileSize / texLayerSize
+     * @param program      已编译的 GLProgram
+     * @param tileSet      本 shader 使用的瓦片数据
+     * @param viewTileInfo 屏幕瓦片网格 + 视口尺寸
+     * @param tileSize     瓦片边长——安全冗余，需与 viewTileInfo 一致
+     * @param bindables    纹理布局——顺序即单元号
      */
     public NormalShader(GLProgram program,
-                        TileBufferGroup group,
-                        int viewWidth, int viewHeight,
+                        ShaderLayerTileSet tileSet,
+                        ViewTileInfo viewTileInfo,
                         int tileSize,
                         GLBindable[] bindables) {
-        super(program);
-        if (group == null) {
-            throw new IllegalArgumentException("group must not be null");
-        }
-        if (viewWidth <= 0 || viewHeight <= 0) {
-            throw new IllegalArgumentException(
-                    "invalid viewport: " + viewWidth + "x" + viewHeight);
-        }
+
+        super(program, bindables, tileSet.getLayerTileRefs());
+
         if (bindables == null) {
-            throw new IllegalArgumentException("layout must not be null");
+            throw new IllegalArgumentException("bindables must not be null");
+        }
+        if (viewTileInfo == null) {
+            throw new IllegalArgumentException("viewTileInfo must not be null");
         }
 
-        this.group      = group;
-        this.viewWidth  = viewWidth;
-        this.viewHeight = viewHeight;
-        this.tileSize = tileSize;
-        this.bindables = bindables;
+        this.tileSet      = tileSet;
+        this.viewTileInfo = viewTileInfo;
+        this.tileSize     = tileSize;
+        this.bindables    = bindables;
     }
 
     // ═══════════════════════════════════════════════
@@ -79,8 +78,38 @@ public final class NormalShader extends AbstractShader {
     // ═══════════════════════════════════════════════
 
     @Override
-    public List<TileBufferGroup> tileGroups() {
-        return Collections.singletonList(group);
+    public List<TileBufferGroup> buildBufferGroups() {
+        // 此时所有瓦片应当都已经上传到 GPU。
+        List<ShaderLayerTileRef> layerTileRefs = tileSet.getLayerTileRefs();
+        List<GLTileDescriptor> descriptors = new ArrayList<>(layerTileRefs.size());
+
+        for (ShaderLayerTileRef layerTileRef : layerTileRefs) {
+            Tile tile = layerTileRef.getTile();
+            GLTile glTile = tile.queryData(GLTile.class);
+            if (glTile == null) {
+                throw new IllegalStateException(
+                        "tile is not GPU-backed at buildBufferGroups time: " + tile);
+            }
+            descriptors.add(glTile.getDescriptor());
+        }
+
+        ShaderPackedBuffer packed =
+                TileBufferUtils.packBuffers(tileSet, descriptors, viewTileInfo);
+
+        return Collections.singletonList(
+                new TileBufferGroup(
+                        ShaderConstants.TEXTURE_UNIT_TILE_TABLE,
+                        ShaderConstants.TEXTURE_UNIT_LAYER_TABLE,
+                        ShaderConstants.TEXTURE_UNIT_INDEX_TABLE,
+                        packed.getOffsets(),
+                        packed.getCounts(),
+                        packed.getLayerTable(),
+                        packed.getLayerEntryCount(),
+                        packed.getTileTable(),
+                        packed.getTileEntryCount(),
+                        packed.getIndexList(),
+                        packed.getIndexCount())
+        );
     }
 
     @Override
@@ -95,40 +124,44 @@ public final class NormalShader extends AbstractShader {
     protected void configure() {
         GLProgram p = getProgram();
 
+        int viewWidth  = viewTileInfo.getViewWidth();
+        int viewHeight = viewTileInfo.getViewHeight();
+
         // ── 几何参数 ──
         p.setVec2IfPresent("uViewport", viewWidth, viewHeight);
         p.setFloatIfPresent("uTileSize", tileSize);
 
-
-        // ── 本 group 的三张 buffer 表 ──
-        p.setIntIfPresent("uTileTable",  group.getTileTableUnit());
-        p.setIntIfPresent("uLayerTable", group.getLayerTableUnit());
-        p.setIntIfPresent("uIndexTable", group.getIndexTableUnit());
+        // ── 本 group 的三张 buffer 表单元 ──
+        p.setIntIfPresent("uTileTable",  ShaderConstants.TEXTURE_UNIT_TILE_TABLE);
+        p.setIntIfPresent("uLayerTable", ShaderConstants.TEXTURE_UNIT_LAYER_TABLE);
+        p.setIntIfPresent("uIndexTable", ShaderConstants.TEXTURE_UNIT_INDEX_TABLE);
 
         // ── 纹理采样器 ──
         for (int i = 0; i < ShaderConstants.MAX_LAYER_TEXTURE_UNIT_COUNT; i++) {
             p.setIntIfPresent("uTexture" + i, i);
         }
 
-
-        float[] scales = new float[ShaderConstants.MAX_LAYER_TEXTURE_UNIT_COUNT * 2];   // 8 * 2
+        // ── per-unit scale：每个 bindable 的 (1/edgeU, 1/edgeV) ──
+        float[] scales = new float[ShaderConstants.MAX_LAYER_TEXTURE_UNIT_COUNT * 2];
 
         for (int i = 0; i < bindables.length; i++) {
             GLBindable b = bindables[i];
             int edgeU, edgeV;
+
             if (b instanceof GLAtlas) {
                 GLAtlas atlas = (GLAtlas) b;
                 int e = atlas.getLayout().getTilesPerEdge();
                 edgeU = edgeV = e;
             } else if (b instanceof GLTexture) {
-                // FBO 颜色附件——纹理尺寸等于视口像素尺寸，网格按 tileSize 划分。
-                // 非正方形视口下 edgeU ≠ edgeV，必须各算各的。
-                edgeU = Math.max(1, (viewWidth  + tileSize - 1) / tileSize);
-                edgeV = Math.max(1, (viewHeight + tileSize - 1) / tileSize);
+                // 从纹理自身尺寸推 edge——不依赖"纹理尺寸 == 视口"这一假设
+                GLTexture tex = (GLTexture) b;
+                edgeU = Math.max(1, (tex.getWidth()  + tileSize - 1) / tileSize);
+                edgeV = Math.max(1, (tex.getHeight() + tileSize - 1) / tileSize);
             } else {
                 throw new IllegalStateException(
                         "unsupported bindable at unit " + i + ": " + b);
             }
+
             scales[i * 2]     = 1.0f / edgeU;
             scales[i * 2 + 1] = 1.0f / edgeV;
         }

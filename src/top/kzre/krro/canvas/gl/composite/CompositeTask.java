@@ -6,16 +6,12 @@ import top.kzre.krro.canvas.core.layer.render.UploadableTile;
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.resource.GLQuad;
-import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
-import top.kzre.krro.canvas.gl.tile.TextureTileSlot;
-import top.kzre.krro.canvas.gl.tile.GLTile;
-import top.kzre.krro.canvas.gl.tile.TileRef;
+import top.kzre.krro.canvas.gl.tile.*;
+import top.kzre.krro.util.tile.Tile;
 
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.Callable;
 
 import static org.lwjgl.opengl.GL11.*;
@@ -76,7 +72,6 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
         long tClearEnd = System.nanoTime();
 
         GLQuad quad = context.getQuad();
-        List<ShaderDraw> executed = new ArrayList<>();
         List<Integer> transientVbos = new ArrayList<>();
 
         long tDrawsStart = System.nanoTime();
@@ -85,30 +80,48 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
             for (int i = 0; i < draws.size(); i++) {
                 ShaderDraw draw = draws.get(i);
                 GLFramebuffer target = fboPair[i % 2];
-                Shader shader = draw.getShader();
+
 
                 long tPageInNs = 0;
-                long tTableNs  = 0;
-                long tInstNs   = 0;
-                long tDrawNs   = 0;
+                long tTableNs = 0;
+                long tInstNs = 0;
+                long tDrawNs = 0;
 
                 quad.bind();
                 try {
-                    List<TileBufferGroup> groups = shader.tileGroups();
+
+                    Shader shader = draw.getShader();
+
+
+
+                    List<ShaderLayerTileRef> tiles = shader.getTiles();
+                    // 换入瓦片。内部 GL 调用（glActiveTexture / glBindTexture /
+                    // glBindFramebuffer）会改变纹理绑定状态，因此必须在 bindables
+                    // 绑定之前执行——否则后续的 glBindTexture 会覆盖 bindables 的绑定。
+                    long p0 = System.nanoTime();
+                    pageIn(atlasPage, tiles);
+                    long p1 = System.nanoTime();
+                    tPageInNs += p1 - p0;
+
+                    // 绑定 bindables——顺序上有两条约束：
+                    //   1. 必须在 pageIn 之后：pageIn 内部会改纹理状态，提前绑会被覆盖
+                    //   2. 必须在 buildBufferGroups 之前：GLTexture.getUnit() 只有 bind
+                    //      之后才有效，getDescriptor 依赖它生成 tileTable 的 unit 字段
+                    GLBindable[] bindables = shader.getBindables();
+                    for (int u = 0; u < bindables.length; u++) {
+                        GLBindable b = bindables[u];
+                        if (b != null) {
+                            b.bind(u);
+                        }
+                    }
+
+                    List<TileBufferGroup> groups = shader.buildBufferGroups();
+
                     for (int gi = 0; gi < groups.size(); gi++) {
                         TileBufferGroup group = groups.get(gi);
                         int instLoc = shader.instanceLocation(gi);
 
-                        // 1. 换入瓦片
-                        long p0 = System.nanoTime();
-                        for (Map.Entry<TextureTileSlot, TileRef> e
-                                : group.getSlotTileRefMap().entrySet()) {
-                            pageIn(atlasPage, e.getKey(), e.getValue(), executed);
-                        }
-                        long p1 = System.nanoTime();
-                        tPageInNs += p1 - p0;
-
-                        // 2. 上传三张 buffer table
+                        // 3. 上传三张 buffer table
                         uploadFloatTable(group.getTileTableUnit(),
                                 group.getTileTable(),
                                 group.getTileEntryCount() * 8);
@@ -121,19 +134,10 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                         long p2 = System.nanoTime();
                         tTableNs += p2 - p1;
 
-                        // 3. 上传 instances VBO
+                        // 4. 上传 instances VBO
                         transientVbos.add(uploadInstances(group, instLoc, viewport));
                         long p3 = System.nanoTime();
                         tInstNs += p3 - p2;
-                    }
-
-                    // 4. 绑定 bindables
-                    GLBindable[] bindables = draw.getBindables();
-                    for (int u = 0; u < bindables.length; u++) {
-                        GLBindable b = bindables[u];
-                        if (b != null) {
-                            b.bind(u);
-                        }
                     }
 
                     // 5. 绘制
@@ -165,7 +169,6 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                         + " glDraw=" + ms(tDrawNs) + "ms"
                         + " | total=" + ms(tPageInNs + tTableNs + tInstNs + tDrawNs) + "ms");
 
-                executed.add(draw);
             }
         } finally {
             for (int vbo : transientVbos) {
@@ -190,60 +193,115 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
     // 换页
     // ═══════════════════════════════════════════════
 
+
+    /**
+     * 确保传入的所有瓦片引用都已换入 GPU。批量路径优先——能整层
+     * 分配的走连续分配 + 整层上传；剩余的零头走逐个分配。
+     *
+     * <p><b>流程</b>：
+     * <ol>
+     *   <li>收集待换入瓦片 + 已在 GPU 的瓦片</li>
+     *   <li>{@code ensureSlotsKeep} 腾出足够空闲槽位</li>
+     *   <li>循环调用 {@code allocateContinuously}——每次处理一个 atlas，
+     *       直到没有可分配的整层</li>
+     *   <li>对每个产出 range 调 {@code atlas.uploadLayers}——批量上传</li>
+     *   <li>剩余零头走 {@code allocate} 逐个分配——后续 {@code uploadTile}
+     *       逐个上传</li>
+     * </ol>
+     *
+     * <p><b>线程契约</b>：必须在 GL 线程调用。
+     */
     private void pageIn(AtlasPoolPage page,
-                        TextureTileSlot slot,
-                        TileRef ref,
-                        List<ShaderDraw> executed) {
+                        List<ShaderLayerTileRef> groups) {
+        // ── 1. 收集（按 Tile 去重）──
+        Set<Tile> toPageInTiles = new LinkedHashSet<>();
+        List<TileRef> toPageIn = new ArrayList<>();
+        Set<Tile> alreadyOnGpu = new HashSet<>();
 
-        if (ref.getTile().queryData(GLTile.class) != null) {
-            uploadIfNeeded(ref);
-            return;
-        }
-
-        if (page.allocateAt(slot, ref)) {
-            uploadIfNeeded(ref);
-            return;
-        }
-
-        TileRef occupant = findOccupant(executed, slot);
-        if (occupant == null) {
-            throw new IllegalStateException(
-                    "planning error: slot " + slot + " is occupied but no "
-                            + "occupant found in executed bundles");
-        }
-        if (ref.equals(occupant)) {
-            return;
-        }
-
-        occupant.pageOut();
-
-        if (!page.allocateAt(slot, ref)) {
-            throw new IllegalStateException(
-                    "planning error: slot " + slot + " still occupied after "
-                            + "evicting " + occupant);
-        }
-        uploadIfNeeded(ref);
-    }
-
-    private void uploadIfNeeded(TileRef ref) {
-        UploadableTile uploadable = ref.getTile().queryData(UploadableTile.class);
-        if (uploadable != null) {
-            uploadable.ensureUploaded();
-        }
-    }
-
-    private TileRef findOccupant(List<ShaderDraw> executed, TextureTileSlot slot) {
-        for (int i = executed.size() - 1; i >= 0; i--) {
-            ShaderDraw draw = executed.get(i);
-            Shader shader = draw.getShader();
-            for (TileBufferGroup group : shader.tileGroups()) {
-                TileRef ref = group.getSlotTileRefMap().get(slot);
-                if (ref != null) {
-                    return ref;
-                }
+        for (ShaderLayerTileRef layerTileRef : groups) {
+            TileRef ref = new TileRef(layerTileRef.getCanvas(), layerTileRef.getTile());
+            Tile tile = ref.getTile();
+            if (tile.queryData(GLTile.class) != null) {
+                alreadyOnGpu.add(tile);
+            } else if (toPageInTiles.add(tile)) {
+                toPageIn.add(ref);
             }
         }
-        return null;
+
+        if (toPageIn.isEmpty() && alreadyOnGpu.isEmpty()) {
+            return;
+        }
+
+        // ── 2. 腾出足够空闲槽位 ──
+        int ensured = page.ensureSlotsKeep(toPageIn.size(), alreadyOnGpu);
+        if (ensured < toPageIn.size()) {
+            throw new IllegalStateException(
+                    "cannot free enough slots: need=" + toPageIn.size()
+                            + ", available=" + ensured);
+        }
+
+        // ── 3. 批量分配 + 批量上传 ──
+        List<TileRef> remaining = toPageIn;
+        List<TileRef> rest = new ArrayList<>();
+
+        while (!remaining.isEmpty()) {
+            rest.clear();
+            AtlasLayerRange range = page.allocateContinuously(remaining, rest);
+
+            // atlas 碎片化，无法连续分配了
+            if (range == null) {
+                break;
+            }
+
+            // 批量上传整层段——调用方负责 pack + glTexSubImage3D
+            range.getAtlas().uploadLayers(range.getStart(), range.getCount());
+
+            remaining = new ArrayList<>(rest);
+        }
+
+        // ── 4. 剩余零头逐个分配 + 上传 ──
+        for (TileRef ref : remaining) {
+            if (!page.allocate(ref)) {
+                throw new IllegalStateException(
+                        "allocate failed for tile: " + ref.getTile());
+            }
+            uploadTile(ref.getTile());
+        }
+
+        // ── 5. 已在 GPU 的瓦片——确保数据新鲜 ──
+        for (Tile tile : alreadyOnGpu) {
+            uploadTile(tile);
+        }
+    }
+
+    /**
+     * 确保瓦片的 GPU 数据是新鲜的。
+     *
+     * <p><b>两类 GPU 瓦片</b>：
+     * <ul>
+     *   <li>{@link top.kzre.krro.canvas.gl.tile.GLAtlas.GLTileData}——atlas 中的瓦片，
+     *       实现 {@link UploadableTile}，脏时重传</li>
+     *   <li>外部纹理瓦片（如 FBO 附着）——已是 GPU 数据，
+     *       无 CPU peer，无需上传</li>
+     * </ul>
+     *
+     * <p><b>非 GPU 瓦片报错</b>：执行阶段不应出现 CPU 形态的瓦片——
+     * 规划阶段必须已完成换入。
+     *
+     * @param tile 待检查的瓦片，非 null
+     * @throws IllegalStateException 瓦片不是 GPU 形态（规划错误）
+     */
+    private void uploadTile(Tile tile) {
+        GLTile glTile = tile.queryData(GLTile.class);
+        if (glTile == null) {
+            throw new IllegalStateException(
+                    "expected GPU tile at execution time, got: "
+                            + tile.getClass().getName()
+                            + " (tile=" + tile + ")");
+        }
+        if (glTile instanceof UploadableTile) {
+            ((UploadableTile) glTile).ensureUploaded();
+        }
     }
 
     // ═══════════════════════════════════════════════
