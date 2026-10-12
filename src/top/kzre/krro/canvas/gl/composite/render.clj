@@ -34,7 +34,7 @@
                 (-> (try
                       (promise/from-completable-future
                         (Render/render
-                          (into [(layer/wrap-canvas-as-layer backdrop-canvas)]
+                          (into [(layer/wrap-canvas-as-layer backdrop-canvas :prefix "gl-render-backdrop-")]
                                 layers)
                           ctx
                           (int view-width) (int view-height)

@@ -119,7 +119,7 @@ public final class CompositePlanner {
         for (ShaderBatchBundle batchBundle : batchBundles) {
             Set<Tile> demand = new HashSet<>();
             for (ShaderLayerTileRef layerTileRef : batchBundle.tileSet.layerTileRefs) {
-                demand.add(layerTileRef.tile);
+                demand.add(layerTileRef.getTile());
             }
             demandPerBatch.add(demand);
             allDemands.addAll(demand);
@@ -175,6 +175,20 @@ public final class CompositePlanner {
 
             List<ShaderLayerTileSet> tileSets = new ArrayList<>();
             List<ShaderLayerTileRef> tiles = tileSet.layerTileRefs;
+            System.out.println("layers: " + layers);
+            System.out.println("total tile count: " + tiles.size());
+            for (int i = 0; i < tiles.size(); i++) {
+                ShaderLayerTileRef ref = tiles.get(i);
+                Tile tile = ref.getTile();
+                TiledCanvas canvas = ref.getCanvas();
+                System.out.println("  [" + i + "]"
+                        + " layerIdx=" + ref.getLayerTableIndex()
+                        + " canvas=" + canvas
+                        + " tile=" + tile
+                        + " tx=" + tile.tx()
+                        + " ty=" + tile.ty()
+                        + " tileClass=" + tile.getClass().getSimpleName());
+            }
             int tileCount = tiles.size();
             if (tileCount < 1) {
                 continue;
@@ -186,7 +200,7 @@ public final class CompositePlanner {
                 int preBatch = 0;
                 int uploaded = 0;
                 for (int idx = 0; idx < tileCount; idx++) {
-                    if (tiles.get(idx).tile.queryData(GLTile.class) != null) {
+                    if (tiles.get(idx).getTile().queryData(GLTile.class) != null) {
                         uploaded++;
                     }
                     int batch = (idx - uploaded) / ensured;

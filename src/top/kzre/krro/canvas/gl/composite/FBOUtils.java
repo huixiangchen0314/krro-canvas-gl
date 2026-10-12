@@ -1,5 +1,6 @@
 package top.kzre.krro.canvas.gl.composite;
 
+import clojure.lang.Keyword;
 import top.kzre.colorutils.blend.Blends;
 import top.kzre.krro.canvas.gl.resource.FixedSizeFrameBufferPool;
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
@@ -8,6 +9,8 @@ import top.kzre.krro.canvas.gl.tile.GLTiledTextureLayer;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.math.KMath;
 import top.kzre.krro.util.tile.TiledCanvas;
+
+import java.util.UUID;
 
 /**
  * FBO 与画布 / 图层的桥接工具。
@@ -130,7 +133,7 @@ public final class FBOUtils {
     ) {
         TiledCanvas canvas = wrapCanvas(fbo, tileSize, glExecutor);
         return new WrapLayer(
-                new Object(),
+                Keyword.intern(null,"fbo-" + UUID.randomUUID()),
                 canvas,
                 KMath.mat2dIdentity(),
                 true,

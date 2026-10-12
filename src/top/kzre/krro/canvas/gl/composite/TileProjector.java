@@ -35,14 +35,6 @@ public final class TileProjector {
 
         float[] mat2d = layer.getTransform();
 
-        // 快速路径：标准变换——屏幕瓦片 = 图层瓦片，跳过求逆与 AABB 投影。
-        if (KMath.mat2dIsIdentity(mat2d)) {
-            for (Long dirtyKey : dirtyTiles) {
-                projectTileIdentityInto(layer, dirtyKey, out);
-            }
-            return out;
-        }
-
         float[] inv = KMath.mat2dInv(mat2d);
         if (inv == null) {
             throw new IllegalStateException("singular layer transform (det ≈ 0)");

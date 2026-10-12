@@ -306,6 +306,7 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         }
     }
 
+
     /**
      * 查找本 atlas 中最大的一段连续全空闲层。
      *

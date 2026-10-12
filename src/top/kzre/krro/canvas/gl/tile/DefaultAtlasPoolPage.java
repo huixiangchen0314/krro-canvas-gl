@@ -66,8 +66,8 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
 
     @Override
     public int ensureSlotsKeep(int counts, Set<Tile> keepTiles) {
-        if (counts <= 0) {
-            throw new IllegalArgumentException("counts must be > 0: " + counts);
+        if (counts < 0) {
+            throw new IllegalArgumentException("counts must be >= 0: " + counts);
         }
 
         liftedTiles.cleanup();

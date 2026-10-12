@@ -72,6 +72,7 @@ public final class TileBufferUtils {
         for (int i = 0; i < totalTileCount; i++) {
             refToIndex.put(tileRefs.get(i), i);
         }
+        System.out.println("a shader totalTileCount: " + totalTileCount);
 
         // ── layerTable 扁平化 ──
         float[] layerTable = new float[layerEntries.size() * 8];

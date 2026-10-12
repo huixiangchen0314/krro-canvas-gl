@@ -6,9 +6,10 @@
     (top.kzre.krro.util.tile TiledCanvas)))
 
 
-(defn wrap-layer [layer]
+(defn wrap-layer [layer & {:keys [default-prefix]
+                           :or {default-prefix "wrap-layer"}}]
   (WrapLayer.
-    (:id layer)
+    (:id layer default-prefix)
     (:canvas layer)
     (:transform layer (KMath/mat2dIdentity))
     (:visible layer true)
@@ -18,9 +19,10 @@
 
 (defn wrap-canvas-as-layer
   "把背景画布包装成图层，不释放"
-  [^TiledCanvas canvas]
+  [^TiledCanvas canvas & {:keys [prefix]
+                          :or {prefix "wrap-canvas-layer-"}}]
   (WrapLayer.
-    (keyword (str "wrap-layer-" (random-uuid)))
+    (keyword (str prefix (random-uuid)))
     canvas
     (KMath/mat2dIdentity)
     true

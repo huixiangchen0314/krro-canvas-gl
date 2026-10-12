@@ -1,12 +1,6 @@
 package top.kzre.krro.canvas.gl.composite;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * 一次绘制的图层瓦片集合。{@link TileProjector} 的投影结果，
@@ -151,9 +145,7 @@ public final class ShaderLayerTileSet {
 
         // 子集内 ref 的身份集合——用 IdentityHashMap 语义，
         // 避免 ShaderLayerTileRef 若有 equals 实现而误合并。
-        Set<ShaderLayerTileRef> subset =
-                Collections.newSetFromMap(new IdentityHashMap<>());
-        subset.addAll(layerTileRefs);
+        Set<ShaderLayerTileRef> subset = new HashSet<>(layerTileRefs);
 
         Map<Long, List<ShaderLayerTileRef>> newBuckets =
                 new HashMap<>(porjectTilesMap.size() * 2);

@@ -332,16 +332,6 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
         }
 
         @Override
-        public int acquire() {
-            return super.acquire();
-        }
-
-        @Override
-        public int release() {
-            return super.release();
-        }
-
-        @Override
         public int getByteSize() {
             PixelFormat fmt = owner.texture().getPixelFormat();
             int ts = owner.tileSize();
