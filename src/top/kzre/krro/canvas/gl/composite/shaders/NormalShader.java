@@ -12,6 +12,7 @@ import top.kzre.krro.util.tile.Tile;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * Normal 混合的合成 shader。单 group。
@@ -52,7 +53,7 @@ public final class NormalShader extends AbstractShader {
      * @param tileSize     瓦片边长——安全冗余，需与 viewTileInfo 一致
      * @param bindables    纹理布局——顺序即单元号
      */
-    public NormalShader(GLProgram program,
+    public NormalShader(Supplier<GLProgram> program,
                         ShaderLayerTileSet tileSet,
                         ViewTileInfo viewTileInfo,
                         int tileSize,

@@ -3,7 +3,7 @@ package top.kzre.krro.canvas.gl.composite;
 import top.kzre.krro.canvas.gl.resource.*;
 import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
 import top.kzre.krro.canvas.gl.tile.GLAtlasPool;
-import top.kzre.krro.canvas.gl.tile.GLTiledTextureLayout;
+import top.kzre.krro.canvas.gl.util.ExecutorUtils;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.TiledCanvas;
 
@@ -46,11 +46,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <tr><td>所有访问器</td><td>任意——纯读</td></tr>
  * </table>
  */
-public class GLCompositeContext implements AutoCloseable {
-
-    // ═══════════════════════════════════════════════
-    // 借用资源
-    // ═══════════════════════════════════════════════
+public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
 
     /** 借用，不持有所有权。 */
     private final SerialExecutor glExecutor;
@@ -84,7 +80,7 @@ public class GLCompositeContext implements AutoCloseable {
     private volatile int viewWidth;
     private volatile int viewHeight;
 
-    private final CompositeGLProgramManager glProgramManager = new CompositeGLProgramManager();
+    private final CompositeGLProgramManager glProgramManager;
 
     // ═══════════════════════════════════════════════
     // 构造
@@ -119,6 +115,8 @@ public class GLCompositeContext implements AutoCloseable {
         this.pixelFormat = pixelFormat;
         this.noTexPool = new NoGLTexturePool(glExecutor);
 
+        GLProgramCache programs = new GLProgramCache(glExecutor);
+        glProgramManager = new CompositeGLProgramManager(programs);
         int channels = PixelCodec.channels(pixelFormat);
         float[] defaultPixels = new float[channels];
         this.emptyCanvasTpl = new TiledCanvas(tileSize, defaultPixels);
@@ -167,7 +165,7 @@ public class GLCompositeContext implements AutoCloseable {
      * @throws IllegalArgumentException width / height ≤ 0
      */
     public void adjustViewSize(int width, int height) {
-        checkGlThread();
+        requireGlThread();
         if (closed.get()) {
             throw new IllegalStateException("context is closed");
         }
@@ -220,7 +218,7 @@ public class GLCompositeContext implements AutoCloseable {
      * @throws IllegalStateException 非 GL 线程调用，或上下文已关闭
      */
     public GLQuad getQuad() {
-        checkGlThread();
+        requireGlThread();
         if (closed.get()) {
             throw new IllegalStateException("context is closed");
         }
@@ -245,6 +243,7 @@ public class GLCompositeContext implements AutoCloseable {
     public int getViewHeight() { return viewHeight; }
     public int getTileSize()   { return tileSize; }
 
+    @Override
     public SerialExecutor getGlExecutor() { return glExecutor; }
 
     public GLAtlasPool getAtlasPool() { return atlasPool; }
@@ -284,11 +283,7 @@ public class GLCompositeContext implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) {
             throw new IllegalStateException("context is already closed");
         }
-        if (Thread.currentThread().getId() == glExecutor.getThreadId()) {
-            doClose();
-        } else {
-            glExecutor.submit(this::doClose);
-        }
+        ExecutorUtils.submitIfThread(glExecutor, this::doClose);
     }
 
     /** 实际的清理动作。只在 GL 线程上执行。 */
@@ -300,7 +295,7 @@ public class GLCompositeContext implements AutoCloseable {
         // quad 清理
         GLQuad q = quad;
         if (q != null) {
-            q.release();
+            q.close();
             quad = null;
         }
         atlasPool.close();
@@ -311,14 +306,6 @@ public class GLCompositeContext implements AutoCloseable {
     // ═══════════════════════════════════════════════
     // 内部
     // ═══════════════════════════════════════════════
-
-    private void checkGlThread() {
-        if (Thread.currentThread().getId() != glExecutor.getTheadId()) {
-            throw new IllegalStateException(
-                    "must be called on the GL thread");
-        }
-
-    }
 
     public PixelFormat getPixelFormat() { return pixelFormat; }
 

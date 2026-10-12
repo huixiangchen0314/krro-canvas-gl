@@ -25,10 +25,11 @@ import top.kzre.krro.canvas.gl.util.Resources;
  */
 public final class CompositeGLProgramManager implements AutoCloseable {
 
-    private final GLProgramCache cache = new GLProgramCache();
+    private final GLProgramCache cache;
     private boolean closed = false;
 
-    public CompositeGLProgramManager() {
+    public CompositeGLProgramManager(GLProgramCache cache) {
+        this.cache = cache;
         regSimpleNormal();
     }
 
@@ -54,6 +55,10 @@ public final class CompositeGLProgramManager implements AutoCloseable {
 
         cache.register(Blends.NORMAL,
                 () -> GLProgram.create(vert, frag));
+    }
+
+    public void warmup(){
+        getCache().get(Blends.NORMAL);
     }
 
     // ═══════════════════════════════════════════════

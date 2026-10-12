@@ -260,6 +260,7 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
 
         @Override
         public CompletableFuture<Void> downloadTo(TiledCanvas target, int tx, int ty) {
+            long beginTime = System.nanoTime();
             int refCount = refCount();
             if (refCount <= 0) {
                 throw new IllegalStateException(
@@ -288,29 +289,44 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
             // ── GL 线程：只做 readback ──
             return ExecutorUtils.submitIfThread(
                             owner.glExecutor,
-                            () -> owner.texture().downloadRegion(
-                                    layer,
-                                    canvasColumn * tileSize,
-                                    glRow * tileSize,
-                                    tileSize, tileSize))
+                            () -> {
+                                long downloadBegin = System.nanoTime();
+                                ByteBuffer result = owner.texture().downloadRegion(
+                                        layer,
+                                        canvasColumn * tileSize,
+                                        glRow * tileSize,
+                                        tileSize, tileSize);
+                                long downloadEnd = System.nanoTime();
+                                System.out.printf("downloadTo: %.3fms%n", (downloadEnd - downloadBegin) / 1_000_000.0);
+                                return result;
+                            })
                     // ── CPU 线程：flip / unpack / replaceTile ──
                     .thenApplyAsync(packed -> {
+                        long alreadyDownloadTime = System.nanoTime();
                         try {
                             // glReadPixels 逐行从低 y 到高 y——输出第一行是瓦片底行；
                             // canvas 期望第一行是瓦片顶行——翻一次行序
                             BufferUtils.flipRows(
                                     packed, tileSize,
                                     tileSize * fmt.internalBytesPerPixel());
-
+                            long alreadyFlipRowsTime = System.nanoTime();
                             int needFloats = PixelCodec.cpuFloats(fmt, pixelCount);
                             ByteBuffer out = MemoryUtil.memAlloc(needFloats * Float.BYTES);
                             try {
                                 FloatBuffer dst = out.asFloatBuffer();
                                 PixelCodec.unpackPreAlpha(fmt, packed, pixelCount, dst);
                                 dst.flip();
-
+                                long alreadyUnpackTime = System.nanoTime();
                                 target.replaceTile(tx, ty, out);
                                 out = null;   // 所有权交给 target
+
+                                System.out.printf(
+                                        "[download] total=%.3fms | download=%.1f%% flipRows=%.1f%% unpack=%.1f%% replaceTile=%.1f%%%n",
+                                        (System.nanoTime() - beginTime) / 1_000_000.0,
+                                        (alreadyDownloadTime - beginTime) * 100.0 / (System.nanoTime() - beginTime),
+                                        (alreadyFlipRowsTime - alreadyDownloadTime) * 100.0 / (System.nanoTime() - beginTime),
+                                        (alreadyUnpackTime - alreadyFlipRowsTime) * 100.0 / (System.nanoTime() - beginTime),
+                                        (System.nanoTime() - alreadyUnpackTime) * 100.0 / (System.nanoTime() - beginTime));
                             } finally {
                                 if (out != null) MemoryUtil.memFree(out);
                             }

@@ -175,20 +175,7 @@ public final class CompositePlanner {
 
             List<ShaderLayerTileSet> tileSets = new ArrayList<>();
             List<ShaderLayerTileRef> tiles = tileSet.layerTileRefs;
-            System.out.println("layers: " + layers);
-            System.out.println("total tile count: " + tiles.size());
-            for (int i = 0; i < tiles.size(); i++) {
-                ShaderLayerTileRef ref = tiles.get(i);
-                Tile tile = ref.getTile();
-                TiledCanvas canvas = ref.getCanvas();
-                System.out.println("  [" + i + "]"
-                        + " layerIdx=" + ref.getLayerTableIndex()
-                        + " canvas=" + canvas
-                        + " tile=" + tile
-                        + " tx=" + tile.tx()
-                        + " ty=" + tile.ty()
-                        + " tileClass=" + tile.getClass().getSimpleName());
-            }
+
             int tileCount = tiles.size();
             if (tileCount < 1) {
                 continue;

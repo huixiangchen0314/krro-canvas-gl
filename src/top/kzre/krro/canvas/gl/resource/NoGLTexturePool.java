@@ -1,5 +1,6 @@
 package top.kzre.krro.canvas.gl.resource;
 
+import top.kzre.krro.canvas.gl.util.ExecutorUtils;
 import top.kzre.krro.core.util.SerialExecutor;
 
 /**
@@ -14,14 +15,12 @@ import top.kzre.krro.core.util.SerialExecutor;
 public final class NoGLTexturePool implements GLTexturePool {
 
     private final SerialExecutor glExecutor;
-    private final long           threadId;
 
     public NoGLTexturePool(SerialExecutor glExecutor) {
         if (glExecutor == null) {
             throw new IllegalArgumentException("glExecutor must not be null");
         }
         this.glExecutor = glExecutor;
-        this.threadId   = glExecutor.getThreadId();
     }
 
     @Override
@@ -33,10 +32,6 @@ public final class NoGLTexturePool implements GLTexturePool {
     public void release(GLTexture texture) {
         if (texture == null || texture.isReleased()) return;
 
-        if (Thread.currentThread().getId() == threadId) {
-            texture.release();
-        } else {
-            glExecutor.submit(texture::release);
-        }
+        ExecutorUtils.submitIfThread(glExecutor, texture::release);
     }
 }

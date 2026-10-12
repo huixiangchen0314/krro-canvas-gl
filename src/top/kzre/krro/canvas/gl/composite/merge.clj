@@ -31,9 +31,10 @@
                   layers
                   opts)
                  ;; 立刻下载到 cpu 来
-                 (promise/then
-                   (fn [c]
-                     (download/download! c)))))
+                 ;(promise/then
+                 ;  (fn [c]
+                 ;    (download/download! c)))
+                 ))
              (promise/resolved backdrop))))
 
 (defn gl-merge-layers-fn [] gl-merge-layers-fn*)

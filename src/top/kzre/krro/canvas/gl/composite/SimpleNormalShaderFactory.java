@@ -24,8 +24,7 @@ public final class SimpleNormalShaderFactory implements ShaderFactory {
         int tileSize = context.getContext().getTileSize();
         GLProgramCache programs = compositeContext.getProgramCache();
 
-        GLProgram program = programs.get(Blends.NORMAL);
         return new NormalShader(
-                program, tileSet, viewInfo, tileSize, bindables);
+                ()->programs.get(Blends.NORMAL), tileSet, viewInfo, tileSize, bindables);
     }
 }

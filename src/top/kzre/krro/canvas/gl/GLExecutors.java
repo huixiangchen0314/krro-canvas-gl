@@ -10,7 +10,7 @@ public final class GLExecutors {
     private static volatile SerialExecutor defaultExecutor = null;
 
     /**
-     * 返回默认的离屏渲染执行器
+     * 返回默认的离屏渲染执行器.
      */
     public static synchronized SerialExecutor offscreen() {
         if (defaultExecutor == null) {
@@ -27,7 +27,7 @@ public final class GLExecutors {
         InvisibleWindow window = new InvisibleWindow();
         return new SerialExecutor("krro-canvas-gl-offscreen-",
                 capacity,
-                SerialExecutor.OverflowPolicy.DROP_OLDEST,
+                SerialExecutor.OverflowPolicy.BLOCK_TIMEOUT,
                 timeoutMs,
                 window::init,
                 window::destroy

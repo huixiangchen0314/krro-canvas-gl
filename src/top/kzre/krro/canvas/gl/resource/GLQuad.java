@@ -42,7 +42,7 @@ import static org.lwjgl.opengl.GL31.glDrawArraysInstanced;
  * <h2>线程契约</h2>
  * <b>所有方法必须在 GL 线程（current context）上调用。</b>
  */
-public final class GLQuad {
+public final class GLQuad implements AutoCloseable{
 
     /**
      * aPos.y 的方向约定。
@@ -224,7 +224,7 @@ public final class GLQuad {
     // ═══════════════════════════════════════════════
 
     /** 释放 VAO 和 VBO。必须在 GL 线程上调用。幂等。 */
-    public void release() {
+    public void close() {
         if (released) return;
         glDeleteBuffers(vbo);
         glDeleteVertexArrays(vao);

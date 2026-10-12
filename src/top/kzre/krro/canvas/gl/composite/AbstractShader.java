@@ -3,22 +3,23 @@ package top.kzre.krro.canvas.gl.composite;
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLProgram;
 
-import java.util.Collections;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * {@link Shader} 的通用实现。
  */
 public abstract class AbstractShader implements Shader {
 
-    private final GLProgram program;
+    private final Supplier<GLProgram> programSupplier;
+    private volatile GLProgram program;
     private final GLBindable[] bindables;
     private final List<ShaderLayerTileRef> tiles;
-    protected AbstractShader(GLProgram program, GLBindable[] bindables, List<ShaderLayerTileRef> tiles) {
+    protected AbstractShader(Supplier<GLProgram> programSupplier, GLBindable[] bindables, List<ShaderLayerTileRef> tiles) {
         this.bindables = bindables;
         this.tiles = tiles;
-        if (program == null) throw new IllegalArgumentException("program must not be null");
-        this.program      = program;
+        if (programSupplier == null) throw new IllegalArgumentException("program must not be null");
+        this.programSupplier = programSupplier;
     }
 
     @Override
@@ -33,7 +34,7 @@ public abstract class AbstractShader implements Shader {
 
     @Override
     public final void bind() {
-        program.use();
+        getProgram().use();
         configure();
     }
 
@@ -44,5 +45,12 @@ public abstract class AbstractShader implements Shader {
 
     protected abstract void configure();
 
-    public final GLProgram getProgram() { return program; }
+    protected final GLProgram getProgram() {
+        GLProgram p = program;
+        if (p == null) {
+            p = programSupplier.get();
+            program = p;
+        }
+        return program;
+    }
 }

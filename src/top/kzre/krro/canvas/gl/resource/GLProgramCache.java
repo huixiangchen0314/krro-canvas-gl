@@ -1,5 +1,7 @@
 package top.kzre.krro.canvas.gl.resource;
 
+import top.kzre.krro.core.util.SerialExecutor;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -27,13 +29,17 @@ import java.util.Map;
  * <p>缓存本身不做同步——调用方保证线程正确性。启动时注册、运行期
  * 只读/命中缓存是常态；未命中触发编译时应由 GL 线程执行。
  */
-public final class GLProgramCache implements AutoCloseable {
-
+public final class GLProgramCache implements GLThreadAffine, AutoCloseable {
+    private final SerialExecutor glThread;
     /** key → factory。启动时注册，运行期只读。 */
     private final Map<Object, GLProgramFactory> factoryMap = new HashMap<>();
 
     /** key → 已编译的 program。未命中触发编译后写入。 */
     private final Map<Object, GLProgram> programMap = new HashMap<>();
+
+    public GLProgramCache(SerialExecutor glThread) {
+        this.glThread = glThread;
+    }
 
     // ═══════════════════════════════════════════════
     // 注册
@@ -138,5 +144,10 @@ public final class GLProgramCache implements AutoCloseable {
         }
         programMap.clear();
         factoryMap.clear();
+    }
+
+    @Override
+    public SerialExecutor getGlExecutor() {
+        return glThread;
     }
 }
