@@ -5,6 +5,7 @@ import top.kzre.krro.canvas.core.layer.render.UploadableTile;
 import top.kzre.krro.canvas.gl.resource.*;
 import top.kzre.krro.canvas.gl.util.BufferUtils;
 import top.kzre.krro.canvas.gl.util.Range;
+import top.kzre.krro.core.util.DEBUG;
 import top.kzre.krro.util.tile.*;
 
 import java.nio.ByteBuffer;
@@ -614,9 +615,9 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         void close() {
             if (!closed.compareAndSet(false, true)) {
                 throw new IllegalStateException(
-                        "Handle already closed: layer=" + layer
-                                + ", dataColumn=" + dataColumn
-                                + ", dataRow=" + dataRow);
+                        "Handle already closed:"
+                                + "handle: " + this
+                );
             }
             freeTile(index);
         }
@@ -629,9 +630,9 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         void upload(ByteBuffer buffer) {
             if (closed.get()) {
                 throw new IllegalStateException(
-                        "Handle already closed: layer=" + layer
-                                + ", dataColumn=" + dataColumn
-                                + ", dataRow=" + dataRow);
+                        "Handle already closed:"
+                                + "handle: " + this
+                );
             }
             int tileSize = layout.getTileSize();
             texture.uploadRegion(
@@ -640,6 +641,17 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
                     dataRow * tileSize,
                     tileSize, tileSize,
                     buffer);
+        }
+
+        @Override
+        public String toString() {
+            return "Handle{"
+                    + "index=" + index
+                    + ", layer=" + layer
+                    + ", dataColumn=" + dataColumn
+                    + ", dataRow=" + dataRow
+                    + ", closed=" + closed.get()
+                    + '}';
         }
     }
 
@@ -677,6 +689,7 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
 
         @Override
         public Object version() {
+            checkValid();
             if (peer instanceof VersionedTile) {
                 return ((VersionedTile) peer).version();
             }
@@ -703,6 +716,8 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
 
         @Override
         public GLTileDescriptor getDescriptor() {
+            checkValid();
+
             GLAtlas atlas = handle.getGLAtlas();
             GLTiledTextureLayout layout = atlas.getLayout();
 
@@ -729,8 +744,20 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
 
         @Override
         public void ensureUploaded() {
+            checkValid();
+
             if (dirty.compareAndSet(true, false)) {
                 upload();
+            }
+        }
+
+        private void checkValid() {
+            if (!isValid()){
+                throw new IllegalStateException(
+                        "Handle already closed:" +
+                                "handle: " + handle +
+                                "tile:" + this
+                );
             }
         }
 
@@ -747,18 +774,28 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
 
         @Override
         public int acquire() {
+            checkValid();
+
             int c = peer.acquire();
             proxyRefCount.incrementAndGet();
+//            System.out.println("Acquired tile at " + this
+//            + "handle: " + handle
+//            + "stack: " + DEBUG.stack());
             return c;
         }
 
         @Override
         public int release() {
+            checkValid();
+
             int after  = peer.release();
             boolean free = proxyRefCount.decrementAndGet() == 0;
             if (free) {
                 handle.close();
             }
+//            System.out.println("Released tile at " + this
+//                    + "handle: " + handle
+//                    + "stack: " + DEBUG.stack());
             return after;
         }
 
@@ -807,12 +844,13 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         public String toString() {
             GLAtlas atlas = handle.getGLAtlas();
             return super.toString() + "{"
-                    + "atlas=" + System.identityHashCode(atlas)
+                    + "atlas=" + atlas
                     + ", layer=" + handle.getLayer()
                     + ", row=" + handle.getDataRow()
                     + ", col=" + handle.getDataColumn()
                     + ", dirty=" + dirty.get()
-                    + ", refs=" + peer.refCount()
+                    + ", refCount=" + peer.refCount()
+                    + ", proxyRefCount=" + proxyRefCount.get()
                     + ", peer=" + peer.getClass().getSimpleName()
                     + "}";
         }

@@ -2,6 +2,7 @@ package top.kzre.krro.canvas.gl.composite;
 
 import top.kzre.krro.canvas.gl.resource.*;
 import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
+import top.kzre.krro.canvas.gl.tile.GLAtlasFactory;
 import top.kzre.krro.canvas.gl.tile.GLAtlasPool;
 import top.kzre.krro.canvas.gl.util.ExecutorUtils;
 import top.kzre.krro.canvas.gl.util.ResourceUtils;
@@ -154,7 +155,8 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
         private SerialExecutor glExecutor;
         private PixelFormat pixelFormat;
         private int tileSize;
-        private GLAtlasPool atlasPool;
+        private int atlasCapacity;
+        private GLAtlasFactory atlasFactory;
         public Builder glExecutor(SerialExecutor glExecutor) {
             this.glExecutor = glExecutor;
             return this;
@@ -167,6 +169,16 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
 
         public Builder tileSize(int tileSize) {
             this.tileSize = tileSize;
+            return this;
+        }
+
+        public Builder atlasCapacity(int atlasCapacity) {
+            this.atlasCapacity = atlasCapacity;
+            return this;
+        }
+
+        public Builder atlasFactory(GLAtlasFactory atlasFactory) {
+            this.atlasFactory = atlasFactory;
             return this;
         }
 
@@ -187,7 +199,10 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
             if (tileSize <= 0) {
                 throw new IllegalStateException("tileSize must be > 0: " + tileSize);
             }
-            if (atlasPool == null) {
+            if (atlasCapacity <= 0) {
+                throw new IllegalStateException("atlasCapacity must be > 0: " + atlasCapacity);
+            }
+            if (atlasFactory == null) {
                 throw new IllegalStateException("atlasPool must not be null");
             }
 
@@ -197,11 +212,12 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
                 GLProgramCache programs = new GLProgramCache(glExecutor);
                 CompositeGLProgramManager programManager = new CompositeGLProgramManager(programs);
                 programManager.warmup();
+                GLAtlasPool glAtlasPool = new GLAtlasPool(atlasCapacity, atlasFactory);
                 return new GLCompositeFlyweight(
                         glExecutor,
                         tileSize,
                         pixelFormat,
-                        atlasPool,
+                        glAtlasPool,
                         programManager,
                         glQuad);
             });

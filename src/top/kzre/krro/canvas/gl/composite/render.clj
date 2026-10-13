@@ -40,6 +40,7 @@
                           (int view-width) (int view-height)
                           dirty-tiles))
                       (catch Throwable t
+                        (log/error t "render failed")
                         (promise/rejected t)))
                     (promise/handle
                       (fn [^TiledCanvas result-canvas e]
@@ -54,8 +55,7 @@
                               (try
                                 (.close result-canvas)
                                 (catch Throwable t
-                                  (log/error t)))
-                              (try
-                                (tracker/close! tracker)
-                                (catch Throwable t
-                                  (log/error t))))))))))))))))
+                                  (log/error t "close result canvas failed")
+                                  (log/error e "render failed")
+                                  (when e (throw e))))
+                              (tracker/close! tracker))))))))))))))

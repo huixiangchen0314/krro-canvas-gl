@@ -25,9 +25,17 @@ public final class ShaderLayerTileRef {
         this.layerTableIndex = layerTableIndex;
     }
 
-    public TiledCanvas getCanvas() { return canvas; }
-    public Tile getTile() { return tile; }
-    public int getLayerTableIndex() { return layerTableIndex; }
+    public TiledCanvas getCanvas() {
+        return canvas;
+    }
+
+    public Tile getTile() {
+        return tile;
+    }
+
+    public int getLayerTableIndex() {
+        return layerTableIndex;
+    }
 
     @Override
     public boolean equals(Object o) {

@@ -239,7 +239,9 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                     "cannot free enough slots: need=" + toPageIn.size()
                             + ", available=" + ensured);
         }
-
+//        System.out.println(
+//                "already on gpu size: " + alreadyOnGpu.size()
+//                        + ",  ensured: " + ensured);
         // ── 3. 批量分配 + 批量上传 ──
         List<TileRef> remaining = toPageIn;
         List<TileRef> rest = new ArrayList<>();

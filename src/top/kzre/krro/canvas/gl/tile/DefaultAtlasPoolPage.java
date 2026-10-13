@@ -36,7 +36,14 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
         Iterator<Tile> it = liftedTiles.iterator();
         while (it.hasNext()) {
             Tile tile = it.next();
+
+            if (!tile.isValid()) {            // 死瓦片：直接移除
+                it.remove();
+                continue;
+            }
+
             if (!isOutdate(tile)) continue;
+
 
             GLAtlas.GLTileDataImpl gl =
                     tile.queryData(GLAtlas.GLTileDataImpl.class);
@@ -87,6 +94,12 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
         while (it.hasNext() && extraNeed > 0) {
             Tile tile = it.next();
             if (keepTiles != null && keepTiles.contains(tile)) continue;
+
+            if (!tile.isValid()) {            // 死瓦片
+                it.remove();
+                continue;
+            }
+
             if (!isOutdate(tile)) continue;
 
             GLAtlas.GLTileDataImpl gl =
@@ -95,6 +108,7 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
                 it.remove();
                 continue;
             }
+
             if (!gl.isValid()) {
                 // 死代理——直接移除
                 it.remove();
@@ -118,16 +132,23 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
             while (it.hasNext() && extraNeed > 0) {
                 Tile tile = it.next();
                 if (keepTiles != null && keepTiles.contains(tile)) continue;
+
+                if (!tile.isValid()) {        // ← 死瓦片
+                    it.remove();
+                    continue;
+                }
+
                 if (isOutdate(tile)) continue;  // 脏的已在第一遍处理
 
                 GLAtlas.GLTileDataImpl gl =
                         tile.queryData(GLAtlas.GLTileDataImpl.class);
+
                 if (gl == null) {
                     it.remove();
                     continue;
                 }
 
-                if (!gl.isValid()) {
+                if ( !gl.isValid()) {
                     it.remove();
                     continue;
                 }

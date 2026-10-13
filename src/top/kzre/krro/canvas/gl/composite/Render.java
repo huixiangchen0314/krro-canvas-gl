@@ -103,6 +103,7 @@ public final class Render {
         } catch (Throwable t) {
             fboPool.release(fboA);
             fboPool.release(fboB);
+            System.err.println("plan failed");
             throw t;
         }
 

@@ -25,8 +25,13 @@ public final class TileRef {
         this.tile   = tile;
     }
 
-    public TiledCanvas getCanvas() { return canvas; }
-    public Tile       getTile()   { return tile; }
+    public TiledCanvas getCanvas() {
+        return canvas;
+    }
+
+    public Tile getTile() {
+        return tile;
+    }
 
     /** 瓦片 x 坐标。转发自 {@link Tile#tx()}。 */
     public int getTx() { return tile.tx(); }
