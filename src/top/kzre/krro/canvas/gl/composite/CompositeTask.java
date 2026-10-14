@@ -112,6 +112,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                         GLBindable b = bindables[u];
                         if (b != null) {
                             b.bind(u);
+                            System.out.println("bind: " + b);
                         }
                     }
 

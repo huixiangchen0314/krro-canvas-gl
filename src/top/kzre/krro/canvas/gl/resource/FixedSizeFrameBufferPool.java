@@ -65,6 +65,9 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
             throw new IllegalArgumentException("texturePool must not be null");
         }
         this.slotCapacity = texturePool.getCapacity();
+        if (slotCapacity < 2) {
+            throw new IllegalArgumentException("slotCapacity must be >= 2");
+        }
         this.capacity = texturePool.getCapacity() * texturePool.getLayers();
         this.texturePool = texturePool;
     }
@@ -143,6 +146,9 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
             for (TextureSlot slot : slots) {
                 if (excludedTextures != null
                         && excludedTextures.contains(slot.texture())) {
+                    System.out.println("skip excluding texture: " + slot.texture()
+                    + "excluded: " + excludedTextures.size()
+                    + "slots size: " + slots.size());
                     continue;
                 }
                 GLFramebuffer fbo = slot.tryAcquire();
@@ -215,6 +221,8 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
                 // 低水位以下的空闲 slot 保留常驻，避免下次 acquire
                 // 又要重新 glGenFramebuffers。
                 if (slot.isFullyIdle() && slots.size() > slotCapacity) {
+//                    System.out.println("release fbo pool slot, "
+//                    + "slot size:" + slots.size());
                     texturePool.release(slot.texture());
                     slotToClose = slots.remove(i);
                 }
