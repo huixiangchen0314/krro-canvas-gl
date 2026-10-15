@@ -5,7 +5,6 @@ import top.kzre.krro.canvas.core.layer.render.UploadableTile;
 import top.kzre.krro.canvas.gl.resource.*;
 import top.kzre.krro.canvas.gl.util.BufferUtils;
 import top.kzre.krro.canvas.gl.util.Range;
-import top.kzre.krro.core.util.DEBUG;
 import top.kzre.krro.util.tile.*;
 
 import java.nio.ByteBuffer;
@@ -568,6 +567,47 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         }
     }
 
+    public static boolean inPage(Tile tile){
+        if (tile == null || !tile.isValid()){
+            return false;
+        }
+        GLTileData tileData = tile.queryData(GLTileData.class);
+        return tileData != null && tileData.isValid();
+    }
+
+    public static boolean exclusivePage(Tile tile){
+        if (tile == null || !tile.isValid()){
+            return false;
+        }
+        GLTileData tileData = tile.queryData(GLTileData.class);
+        return tileData != null && tileData.isValid() && isExclusive(tileData);
+    }
+
+    public static boolean isExclusive(GLTileData tile){
+        return tile.getProxyRefCount() == 1;
+    }
+
+    // TODO 包内作用域 会更好吗?
+    /**
+     * 把 {@link Tile} 上的 GPU 形态换回 CPU 形态。
+     *
+     * <p><b>线程契约</b>：涉及 atlas 槽位释放，必须在 GL 线程上调用。
+     */
+    public static boolean pageOut(Tile tile) {
+        if (tile == null) return false;
+        GLTileDataImpl gl = tile.queryData(GLTileDataImpl.class);
+        if (gl == null) return false;
+        int proxyRefCount = gl.proxyRefCount.get();
+        if (proxyRefCount != 1) {
+            throw new IllegalStateException(
+                    "pageOut should called when tile exclusively hold tileData gl proxy");
+        }
+        tile.replaceData(gl.peer);
+        return true;
+    }
+
+
+
     // ═══════════════════════════════════════════════
     // Handle
     // ═══════════════════════════════════════════════
@@ -666,6 +706,7 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         int getDataRow();
         boolean isDirty();
         boolean isValid();
+        int getProxyRefCount();
     }
 
     /**
@@ -678,6 +719,7 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         private GLAtlas.Handle handle;
         private final AtomicInteger proxyRefCount = new AtomicInteger(1);
 
+        @Override
         public int getProxyRefCount() {
             return proxyRefCount.get();
         }
@@ -696,23 +738,7 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
             return peer;
         }
 
-        /**
-         * 把 {@link Tile} 上的 GPU 形态换回 CPU 形态。
-         *
-         * <p><b>线程契约</b>：涉及 atlas 槽位释放，必须在 GL 线程上调用。
-         */
-        public static boolean pageOut(Tile tile) {
-            if (tile == null) return false;
-            GLTileDataImpl gl = tile.queryData(GLTileDataImpl.class);
-            if (gl == null) return false;
-            int proxyRefCount = gl.proxyRefCount.get();
-            if (proxyRefCount != 1) {
-                throw new IllegalStateException(
-                        "pageOut should called when tile exclusively hold tileData gl proxy");
-            }
-            tile.replaceData(gl.peer);
-            return true;
-        }
+
 
         @Override
         public GLTileDescriptor getDescriptor() {

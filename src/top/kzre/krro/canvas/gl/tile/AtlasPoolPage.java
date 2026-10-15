@@ -22,6 +22,10 @@ import java.util.Set;
  * 自行串行化——所有方法应在同一线程调用。
  */
 public interface AtlasPoolPage {
+    /**
+     * 获取所有槽位量
+     */
+    int getCapacity();
 
     /**
      * 驱逐所有脏瓦片。
@@ -38,6 +42,8 @@ public interface AtlasPoolPage {
      * <p><b>副作用</b>：被驱逐的瓦片从 GPU 侧卸载。CPU 侧瓦片数据不受影响。
      */
     void purge();
+
+    void junk(List<Tile> tiles);
 
     /**
      * 确保 atlas 至少有 {@code counts} 个空闲槽位——保留 {@code keepTiles}。

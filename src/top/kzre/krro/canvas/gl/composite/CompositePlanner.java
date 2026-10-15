@@ -4,7 +4,6 @@ import top.kzre.colorutils.blend.Blends;
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
-import top.kzre.krro.canvas.gl.tile.AbstractGLTiledTexture;
 import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
 import top.kzre.krro.canvas.gl.tile.GLAtlas;
 import top.kzre.krro.canvas.gl.tile.GLTile;
@@ -60,6 +59,9 @@ public final class CompositePlanner {
         int minSingleDrawnTiles = context.getMinSingleDrawnTiles();
         SerialExecutor glExecutor = context.getGlExecutor();
         AtlasPoolPage page = context.getAtlasPoolPage();
+        int atlasCapacity = page.getCapacity();
+        List<Tile> allTiles = LayerUtils.collectTiles(layers);
+        page.junk(allTiles);
         page.purge();
 
         ILayer fboALayer = FBOUtils.wrapLayer(fboA, tileSize, glExecutor);
@@ -180,14 +182,44 @@ public final class CompositePlanner {
             if (tileCount < 1) {
                 continue;
             }
-            if (tileCount <= ensured || ensured == 0) {
+            if (tileCount <= ensured) {
                 tileSets.add(tileSet);
+            } else if (ensured < needTiles) {
+                // 如果剔除到单批后，确保的瓦片还是太少
+                // 就不管是否上传，按确保的瓦片数直接划分
+                int availableSlotCount = ensured;
+                for (ShaderLayerTileRef tileRef : tiles) {
+                    if (GLAtlas.exclusivePage(tileRef.getTile())) {
+                        availableSlotCount++;
+                    }
+                }
+                if (availableSlotCount == 0) {
+                    throw new IllegalStateException("no atlas slot available");
+                }
+
+//                System.out.println("batch feedback: "
+//                        + "\n ensured: " + ensured
+//                        + "\n needTiles: " + needTiles
+//                        + "\n availableSlotCount: " + availableSlotCount);
+                ArrayList<ShaderLayerTileRef> tileRefs = new ArrayList<>(availableSlotCount);
+                int preBatch = 0;
+                for (int idx = 0; idx < tileCount; idx++) {
+                    int batch = idx / availableSlotCount ;
+                    if (batch > preBatch) {
+                        preBatch = batch;
+                        tileSets.add(tileSet.withRefs(tileRefs));
+                        tileRefs = new ArrayList<>();
+                    }
+                    tileRefs.add(tiles.get(idx));
+                }
+                tileSets.add(tileSet.withRefs(tileRefs));
             } else {
                 ArrayList<ShaderLayerTileRef> tileRefs = new ArrayList<>(ensured);
                 int preBatch = 0;
                 int uploaded = 0;
                 for (int idx = 0; idx < tileCount; idx++) {
-                    if (tiles.get(idx).getTile().queryData(GLTile.class) != null) {
+                    Tile tile = tiles.get(idx).getTile();
+                    if (GLAtlas.exclusivePage(tile)) {
                         uploaded++;
                     }
                     int batch = (idx - uploaded) / ensured;
@@ -200,13 +232,19 @@ public final class CompositePlanner {
                 }
                 tileSets.add(tileSet.withRefs(tileRefs));
             }
+
             splitCount += tileSets.size();
 
             // Shader 构建 策略
             for (ShaderLayerTileSet tilesToDraw : tileSets) {
                 GLBindable[] resolvedBundables;
                 ShaderFactoryContext factoryContext;
-
+                if (tilesToDraw.getLayerTileRefs().size() > atlasCapacity){
+                    throw new IllegalStateException(
+                            "tile refs out of bounds"
+                    + "\n size: " + tilesToDraw.getLayerTileRefs().size()
+                    + "\n ensured: " + ensured);
+                }
                 if (draws.isEmpty()) {
                     resolvedBundables = bindables;
                 } else {
@@ -225,7 +263,6 @@ public final class CompositePlanner {
                 } else {
                     throw new IllegalArgumentException("shader keys must match");
                 }
-
                 draws.add(new ShaderDraw(shader, resolvedBundables));
             }
         }

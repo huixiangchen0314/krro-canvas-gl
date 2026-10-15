@@ -16,7 +16,7 @@ import java.util.Set;
 public class DefaultAtlasPoolPage implements AtlasPoolPage {
 
     private final GLAtlas[] atlases;
-
+    private final int capacity;
     /**
      * 被提升到 显存的瓦片
      */
@@ -27,6 +27,16 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
             throw new IllegalArgumentException("atlases must not be empty");
         }
         this.atlases = atlases;
+        int totalSlot = 0;
+        for (GLAtlas atlas : atlases) {
+            totalSlot += atlas.getCapacity();
+        }
+        this.capacity = totalSlot;
+    }
+
+    @Override
+    public int getCapacity() {
+        return capacity;
     }
 
     @Override
@@ -44,30 +54,30 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
 
             if (!isOutdate(tile)) continue;
 
-
             GLAtlas.GLTileDataImpl gl =
                     tile.queryData(GLAtlas.GLTileDataImpl.class);
-            if (gl == null) {
-                // 已是 CPU 形态——从队列移除
+            if (gl == null || !gl.isValid()) {
                 it.remove();
                 continue;
             }
 
-            if (!gl.isValid()) {
-                // 死代理——release 归零时 handle 已关闭，槽位已释放。
-                // Tile 已放弃所有权，对象已死——直接移除队列条目。
-                it.remove();
-                continue;
-            }
-
-            if (gl.getProxyRefCount() > 1) {
-                // 外部还持有——跳过，等它释放后下次再清
+            if (!GLAtlas.isExclusive(gl)) {
                 continue;
             }
 
             // 有效且独占——正常换出
-            GLAtlas.GLTileDataImpl.pageOut(tile);
+            GLAtlas.pageOut(tile);
             it.remove();
+        }
+    }
+
+    @Override
+    public void junk(List<Tile> tiles) {
+        for (Tile tile : tiles) {
+            if (GLAtlas.inPage(tile)) {
+                // 重复入队是安全的
+                liftedTiles.add(tile);
+            }
         }
     }
 
@@ -104,22 +114,17 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
 
             GLAtlas.GLTileDataImpl gl =
                     tile.queryData(GLAtlas.GLTileDataImpl.class);
-            if (gl == null) {
+
+            if (gl == null || !gl.isValid()) {
                 it.remove();
                 continue;
             }
 
-            if (!gl.isValid()) {
-                // 死代理——直接移除
-                it.remove();
-                continue;
-            }
-            if (gl.getProxyRefCount() > 1) {
-                // 外部持有——跳过，不驱逐
+            if (!GLAtlas.isExclusive(gl)) {
                 continue;
             }
 
-            if (GLAtlas.GLTileDataImpl.pageOut(tile)) {
+            if (GLAtlas.pageOut(tile)) {
                 extraNeed--;
                 currentFree++;
             }
@@ -143,21 +148,17 @@ public class DefaultAtlasPoolPage implements AtlasPoolPage {
                 GLAtlas.GLTileDataImpl gl =
                         tile.queryData(GLAtlas.GLTileDataImpl.class);
 
-                if (gl == null) {
+                if (gl == null
+                || !gl.isValid()) {
                     it.remove();
                     continue;
                 }
 
-                if ( !gl.isValid()) {
-                    it.remove();
+                if (!GLAtlas.isExclusive(gl)) {
                     continue;
                 }
 
-                if (gl.getProxyRefCount() > 1) {
-                    continue;
-                }
-
-                if (GLAtlas.GLTileDataImpl.pageOut(tile)) {
+                if (GLAtlas.pageOut(tile)) {
                     extraNeed--;
                     currentFree++;
                 }
