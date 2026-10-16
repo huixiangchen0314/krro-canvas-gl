@@ -320,17 +320,31 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
      */
     private void releaseSlots(List<TextureSlot> toRelease) {
         if (toRelease.isEmpty()) return;
-
-        for (TextureSlot slot : toRelease) {
-            try {
-                texturePool.release(slot.texture());
-            } catch (RuntimeException ignored) {
-                // 单个纹理归还失败不中断——继续处理其他 slot
-            }
+        Throwable t = null;
+        try{
+            ExecutorUtils.submitIfThread(getGlExecutor(), () ->
+            {
+                RuntimeException reeaseError = ResourceUtils.closeDelayError(toRelease);
+                if (reeaseError != null) {
+                    throw reeaseError;
+                }
+            });
+        }catch (Throwable e){
+            t = e;
         }
 
-        ExecutorUtils.submitIfThread(getGlExecutor(), () ->
-                ResourceUtils.closeDelayError(toRelease));
+        // 归还纹理——逐个执行，失败不中断
+        List<Runnable> releases = new ArrayList<>(toRelease.size());
+        for (TextureSlot slot : toRelease) {
+            releases.add(() -> texturePool.release(slot.texture()));
+        }
+
+        Throwable runtimeException = ResourceUtils.accumulateException(t,
+                ResourceUtils.runDelayError(releases));
+
+        if (runtimeException != null) {
+            throw ResourceUtils.wrapError(runtimeException);
+        }
     }
 
     /**
