@@ -101,7 +101,7 @@ public final class TiledTextureBlitter implements AutoCloseable {
         if (texture == null) {
             throw new NullPointerException("texture must not be null");
         }
-        if (texture.isReleased()) {
+        if (texture.isClosed()) {
             throw new IllegalStateException("texture has been released");
         }
         if (layer < 0 || layer >= texture.getLayers()) {
@@ -119,6 +119,7 @@ public final class TiledTextureBlitter implements AutoCloseable {
         int fbo = ensureReadFbo();
         int texHandle = texture.getHandle();
 
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, targetFbo);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
         try {
             glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,

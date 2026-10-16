@@ -53,19 +53,19 @@ import static org.lwjgl.opengl.GL30.*;
  * <h2>幂等性</h2>
  * {@link #release()} 幂等。释放后所有其他方法抛 {@link IllegalStateException}。
  */
-public final class GLTexture implements GLBindable{
+public final class GLTexture implements GLBindable, AutoCloseable {
 
     // ═══════════════════════════════════════════════
     // 内部状态
     // ═══════════════════════════════════════════════
 
-    private final int         handle;
-    private final int         width;
-    private final int         height;
-    private final int         layers;      // texture array 层数；2D 场景为 1
+    private final int handle;
+    private final int width;
+    private final int height;
+    private final int layers;      // texture array 层数；2D 场景为 1
     private final PixelFormat pixelFormat;
 
-    private boolean released = false;
+    private volatile boolean closed = false;
 
     // ═══════════════════════════════════════════════
     // 构造
@@ -75,10 +75,10 @@ public final class GLTexture implements GLBindable{
     private GLTexture(int handle,
                       int width, int height, int layers,
                       PixelFormat pixelFormat) {
-        this.handle      = handle;
-        this.width       = width;
-        this.height      = height;
-        this.layers      = layers;
+        this.handle = handle;
+        this.width = width;
+        this.height = height;
+        this.layers = layers;
         this.pixelFormat = pixelFormat;
     }
 
@@ -258,10 +258,10 @@ public final class GLTexture implements GLBindable{
      *
      * <p>一次 {@code glTexSubImage3D} 完成——覆盖整个 3D 盒子。
      *
-     * @param z0    起始层，{@code [0, layers)}
-     * @param depth 层数，{@code > 0}，{@code z0 + depth ≤ layers}
+     * @param z0      起始层，{@code [0, layers)}
+     * @param depth   层数，{@code > 0}，{@code z0 + depth ≤ layers}
      * @param x,y,w,h 层内矩形区域
-     * @param data 数据缓冲
+     * @param data    数据缓冲
      */
     public void uploadRegion3D(int z0, int depth,
                                int x, int y, int w, int h,
@@ -293,7 +293,7 @@ public final class GLTexture implements GLBindable{
      *
      * @param layer 层索引
      * @return 新分配的堆外 buffer，大小
-     *         {@code width * height * pixelFormat.getBytesPerPixel()}
+     * {@code width * height * pixelFormat.getBytesPerPixel()}
      */
     public ByteBuffer downloadLayer(int layer) {
         checkAlive();
@@ -341,7 +341,7 @@ public final class GLTexture implements GLBindable{
      * @param w     区域宽
      * @param h     区域高
      * @return 新分配的堆外 buffer，大小
-     *         {@code w * h * pixelFormat.getBytesPerPixel()}
+     * {@code w * h * pixelFormat.getBytesPerPixel()}
      * @throws IllegalStateException     纹理已释放
      * @throws IndexOutOfBoundsException layer 或区域越界
      */
@@ -376,6 +376,7 @@ public final class GLTexture implements GLBindable{
     // 绑定
     // ═══════════════════════════════════════════════
     private int unit = -1;
+
     /**
      * 绑定到指定纹理单元。
      *
@@ -414,41 +415,74 @@ public final class GLTexture implements GLBindable{
      *
      * <p>释放后再调用其他方法（除查询外）会抛 {@link IllegalStateException}。
      */
+    @Deprecated
     public void release() {
-        if (released) return;
-        if (downloadFbo != 0) {
-            glDeleteFramebuffers(downloadFbo);
-            downloadFbo = 0;
-        }
-        glDeleteTextures(handle);
-        released = true;
+        close();
     }
 
     // ═══════════════════════════════════════════════
     // 查询
     // ═══════════════════════════════════════════════
 
-    /** GL 纹理句柄。 */
-    public int getHandle()              { return handle; }
-    /** 宽（像素）。 */
-    public int getWidth()               { return width; }
-    /** 高（像素）。 */
-    public int getHeight()              { return height; }
-    /** 层数（tile 数量）。 */
-    public int getLayers()              { return layers; }
-    /** 像素格式。 */
-    public PixelFormat getPixelFormat() { return pixelFormat; }
-    /** 每像素字节数（从 pixelFormat 取）。 */
-    public int getBytesPerPixel()       { return pixelFormat.internalBytesPerPixel(); }
-    /** 是否已经释放。 */
-    public boolean isReleased()         { return released; }
+    /**
+     * GL 纹理句柄。
+     */
+    public int getHandle() {
+        return handle;
+    }
 
+    /**
+     * 宽（像素）。
+     */
+    public int getWidth() {
+        return width;
+    }
+
+    /**
+     * 高（像素）。
+     */
+    public int getHeight() {
+        return height;
+    }
+
+    /**
+     * 层数（tile 数量）。
+     */
+    public int getLayers() {
+        return layers;
+    }
+
+    /**
+     * 像素格式。
+     */
+    public PixelFormat getPixelFormat() {
+        return pixelFormat;
+    }
+
+    /**
+     * 每像素字节数（从 pixelFormat 取）。
+     */
+    public int getBytesPerPixel() {
+        return pixelFormat.internalBytesPerPixel();
+    }
+
+    /**
+     * 是否已经释放。
+     */
+    @Deprecated
+    public boolean isReleased() {
+        return isClosed();
+    }
+
+    public boolean isClosed() {
+        return closed;
+    }
     // ═══════════════════════════════════════════════
     // 内部
     // ═══════════════════════════════════════════════
 
     private void checkAlive() {
-        if (released) {
+        if (closed) {
             throw new IllegalStateException("GLTexture has been released");
         }
     }
@@ -475,11 +509,22 @@ public final class GLTexture implements GLBindable{
                 "id=" + handle +
                 ", " + width + "x" + height + "x" + layers +
                 ", fmt=" + pixelFormat +
-                ", released=" + released +
+                ", released=" + closed +
                 '}';
     }
 
     public int getUnit() {
         return unit;
+    }
+
+    @Override
+    public void close() {
+        if (closed) return;
+        if (downloadFbo != 0) {
+            glDeleteFramebuffers(downloadFbo);
+            downloadFbo = 0;
+        }
+        glDeleteTextures(handle);
+        closed = true;
     }
 }
