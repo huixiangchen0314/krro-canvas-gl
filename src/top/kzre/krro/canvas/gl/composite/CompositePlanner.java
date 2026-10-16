@@ -160,7 +160,9 @@ public final class CompositePlanner {
 
             // ── 本批次实际用到的外部纹理（非 atlas） ──
             Set<GLTexture> batchTextures = LayerUtils.collectTextures(batchLayers);
-
+//            if (!batchTextures.isEmpty()) {
+//                System.out.println("texture as layer count: " + batchTextures.size());
+//            }
             int baseLen = atlases.length + batchTextures.size();
 
             GLBindable[] bindables = new GLBindable[baseLen];
@@ -184,7 +186,8 @@ public final class CompositePlanner {
             }
             if (tileCount <= ensured) {
                 tileSets.add(tileSet);
-            } else if (ensured < needTiles) {
+            }
+            else if (ensured < needTiles) {
                 // 如果剔除到单批后，确保的瓦片还是太少
                 // 就不管是否上传，按确保的瓦片数直接划分
                 int availableSlotCount = ensured;
@@ -213,7 +216,8 @@ public final class CompositePlanner {
                     tileRefs.add(tiles.get(idx));
                 }
                 tileSets.add(tileSet.withRefs(tileRefs));
-            } else {
+            }
+            else {
                 ArrayList<ShaderLayerTileRef> tileRefs = new ArrayList<>(ensured);
                 int preBatch = 0;
                 int uploaded = 0;

@@ -31,10 +31,10 @@ import java.util.List;
  */
 public final class FixedSizeTexturePool implements GLTexturePool, AutoCloseable {
 
-    private final int         capacity;
-    private final int         width;
-    private final int         height;
-    private final int         layers;
+    private final int capacity;
+    private final int width;
+    private final int height;
+    private final int layers;
     private final PixelFormat pixelFormat;
     private final NoGLTexturePool delegate;
 
@@ -64,12 +64,12 @@ public final class FixedSizeTexturePool implements GLTexturePool, AutoCloseable 
         if (delegate == null) {
             throw new IllegalArgumentException("delegate must not be null");
         }
-        this.capacity    = capacity;
-        this.width       = width;
-        this.height      = height;
-        this.layers      = layers;
+        this.capacity = capacity;
+        this.width = width;
+        this.height = height;
+        this.layers = layers;
         this.pixelFormat = pixelFormat;
-        this.delegate    = delegate;
+        this.delegate = delegate;
     }
 
     // ═══════════════════════════════════════════════

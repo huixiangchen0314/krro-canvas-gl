@@ -5,6 +5,7 @@ import top.kzre.krro.canvas.gl.util.ExecutorUtils;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.TiledCanvas;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -110,6 +111,7 @@ public final class Render {
         long tPlan = System.nanoTime();
 
         if (request == null) {
+            System.out.println("empty plan, return empty canvas");
             fboPool.release(fboA);
             fboPool.release(fboB);
             long tNow = System.nanoTime();
@@ -127,7 +129,18 @@ public final class Render {
                     long tExec = System.nanoTime();
                     TiledCanvas canvas = FBOUtils.asCanvas(
                             resultFbo, fboPool, glExecutor, tileSize);
+//                    Set<Long> preKeep = new HashSet<>(canvas.getTiles());
+//                    System.out.println("composite task completed:" +
+//                            "\n canvas tile counts:" + preKeep.size());
                     canvas.keepTiles(dirtyTiles);
+//                    Set<Long> postKeep = canvas.getTiles();
+//                    System.out.println("composite task completed(after keepTiles):" +
+//                            "\n canvas tile counts:" + postKeep.size() +
+//                            "\n dirty tiles count: " + dirtyTiles.size());
+//                    if (postKeep.isEmpty()) {
+//                        System.err.println("result canvas tiles should not be empty");
+//                    }
+                    assert !canvas.getTiles().isEmpty();
                     long tWrap = System.nanoTime();
                     logTimes(tStart, tCollect, tAcquire, tPlan, tExec, tWrap, "ok");
                     return canvas;

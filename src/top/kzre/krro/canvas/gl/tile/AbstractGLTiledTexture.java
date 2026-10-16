@@ -95,7 +95,7 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
             int layer = layerOffset + i;
             for (int canvasRow = 0; canvasRow < tilesPerColumn; canvasRow++) {
                 for (int canvasCol = 0; canvasCol < tilesPerRow; canvasCol++) {
-                    int ty = layer * tilesPerColumn + canvasRow;
+                    int ty = i * tilesPerColumn + canvasRow;
                     activeTiles.incrementAndGet();
                     int finalCanvasColumn = canvasCol;
                     int finalCanvasRow = canvasRow;

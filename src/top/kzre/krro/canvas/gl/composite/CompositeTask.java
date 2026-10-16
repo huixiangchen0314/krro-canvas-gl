@@ -63,7 +63,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
         for (GLFramebuffer fbo : fboPair) {
             fbo.bind();
             try {
-                glClearColor(0f, 0f, 0f, 0f);
+                glClearColor(0f, 1f, 0f, 1f);
                 glClear(GL_COLOR_BUFFER_BIT);
             } finally {
                 GLFramebuffer.unbind();

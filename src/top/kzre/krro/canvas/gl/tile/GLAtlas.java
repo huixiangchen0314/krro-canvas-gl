@@ -155,18 +155,12 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
      */
     public GLTileDataImpl allocate(TileData peer) {
         if (peer instanceof GLTile) {
-            if (peer instanceof GLTileDataImpl) {
-                GLTileDataImpl existing = (GLTileDataImpl) peer;
-                if (existing.handle.getGLAtlas() == this) {
-                    return existing;
-                }
-                throw new IllegalStateException(
-                        "peer is a GLTileData bound to a different atlas");
-            }
             throw new IllegalStateException(
-                    "peer is already a GPU-backed tile (class = "
-                            + peer.getClass().getName() + ")");
+                    "peer is already GPU-backed (class = "
+                            + peer.getClass().getName()
+                            + "); allocateAt requires a fresh CPU peer");
         }
+
 
         Handle handle = allocateHandle();
         GLTileDataImpl tile = new GLTileDataImpl(peer, handle);

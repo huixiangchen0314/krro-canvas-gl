@@ -67,11 +67,15 @@ public final class NormalShader extends AbstractShader {
         if (viewTileInfo == null) {
             throw new IllegalArgumentException("viewTileInfo must not be null");
         }
+        if (bindables.length > ShaderConstants.MAX_LAYER_TEXTURE_UNIT_COUNT){
+            throw new IllegalArgumentException("bindables must not exceed MAX_LAYER_TEXTURE_UNIT_COUNT");
+        }
 
         this.tileSet      = tileSet;
         this.viewTileInfo = viewTileInfo;
         this.tileSize     = tileSize;
         this.bindables    = bindables;
+
     }
 
     // ═══════════════════════════════════════════════

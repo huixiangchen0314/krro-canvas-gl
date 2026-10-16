@@ -45,8 +45,9 @@
                     (promise/handle
                       (fn [^TiledCanvas result-canvas e]
                         (let [currentTime (System/nanoTime)]
-                          (log/info "batch/render-batch :gl\n"
-                                    "render=" (long (/ (- currentTime beginRenderTime) 1e6)) "ms")
+                          (log/info "batch/render-batch :gl"
+                                    "\nrender=" (long (/ (- currentTime beginRenderTime) 1e6)) "ms"
+                                    "\n result canvas tile counts:" (.size (.getTiles result-canvas)))
                           (try
                             (if e
                               (throw e)

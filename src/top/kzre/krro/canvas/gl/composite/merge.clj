@@ -17,24 +17,16 @@
              (if (and (.isEmpty (.getTiles backdrop))
                       (= (count layers) 1)
                       (KMath/mat2dIsIdentity (:transform (nth layers 0))))
-               (do
-                 (log/info "gl merge fast path")
-                 ;; 快速路径, backdrop是空的，
-                 ;; 并且只有单个图层，且图层变换是标准变换，结果等于图层画布
-                 (promise/resolved
-                   (.keepTiles (.mergeCanvas backdrop (:canvas (nth layers 0)))
-                               (:dirty-tiles opts))))
-               (->
-                 ((get-method batch/render-batch :gl)
-                  :gl
-                  backdrop
-                  layers
-                  opts)
-                 ;; 立刻下载到 cpu 来
-                 ;(promise/then
-                 ;  (fn [c]
-                 ;    (download/download! c)))
-                 ))
+               ;; 快速路径, backdrop是空的，
+               ;; 并且只有单个图层，且图层变换是标准变换，结果等于图层画布
+               (promise/resolved
+                 (.keepTiles (.mergeCanvas backdrop (:canvas (nth layers 0)))
+                             (:dirty-tiles opts)))
+               ((get-method batch/render-batch :gl)
+                :gl
+                backdrop
+                layers
+                opts))
              (promise/resolved backdrop))))
 
 (defn gl-merge-layers-fn [] gl-merge-layers-fn*)
