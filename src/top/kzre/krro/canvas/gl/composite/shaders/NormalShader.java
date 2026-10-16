@@ -7,6 +7,7 @@ import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.tile.GLAtlas;
 import top.kzre.krro.canvas.gl.tile.GLTile;
 import top.kzre.krro.canvas.gl.tile.GLTileDescriptor;
+import top.kzre.krro.canvas.gl.util.Tuple4f;
 import top.kzre.krro.util.tile.Tile;
 
 import java.util.ArrayList;
@@ -45,6 +46,7 @@ public final class NormalShader extends AbstractShader {
     private final ViewTileInfo viewTileInfo;
     private final GLBindable[] bindables;
     private final int tileSize;
+    private final Tuple4f imageAABB;
 
     /**
      * @param program      已编译的 GLProgram
@@ -57,9 +59,10 @@ public final class NormalShader extends AbstractShader {
                         ShaderLayerTileSet tileSet,
                         ViewTileInfo viewTileInfo,
                         int tileSize,
-                        GLBindable[] bindables) {
+                        GLBindable[] bindables, Tuple4f imageAABB) {
 
         super(program, bindables, tileSet.getLayerTileRefs());
+        this.imageAABB = imageAABB;
 
         if (bindables == null) {
             throw new IllegalArgumentException("bindables must not be null");
@@ -69,6 +72,9 @@ public final class NormalShader extends AbstractShader {
         }
         if (bindables.length > ShaderConstants.MAX_LAYER_TEXTURE_UNIT_COUNT){
             throw new IllegalArgumentException("bindables must not exceed MAX_LAYER_TEXTURE_UNIT_COUNT");
+        }
+        if (imageAABB == null) {
+            throw new IllegalArgumentException("imageAABB must not be null");
         }
 
         this.tileSet      = tileSet;
@@ -135,6 +141,10 @@ public final class NormalShader extends AbstractShader {
         // ── 几何参数 ──
         p.setVec2IfPresent("uViewport", viewWidth, viewHeight);
         p.setFloatIfPresent("uTileSize", tileSize);
+
+        // ── 图像范围 AABB（视口空间）──
+        p.setVec2IfPresent("uImageMinPoint", imageAABB.x(), imageAABB.y());
+        p.setVec2IfPresent("uImageMaxPoint", imageAABB.z(), imageAABB.w());
 
         // ── 本 group 的三张 buffer 表单元 ──
         p.setIntIfPresent("uTileTable",  ShaderConstants.TEXTURE_UNIT_TILE_TABLE);

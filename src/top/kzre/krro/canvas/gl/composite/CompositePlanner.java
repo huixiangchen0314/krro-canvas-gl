@@ -7,6 +7,7 @@ import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
 import top.kzre.krro.canvas.gl.tile.GLAtlas;
 import top.kzre.krro.canvas.gl.tile.GLTile;
+import top.kzre.krro.canvas.gl.util.Tuple4f;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.Tile;
 import top.kzre.krro.util.tile.TiledCanvas;
@@ -26,6 +27,7 @@ public final class CompositePlanner {
             GLCompositeContext context,
             GLFramebuffer fboA,
             GLFramebuffer fboB,
+            Tuple4f imageAABB,
             Set<Long> dirtyTiles) {
 
         long t0 = System.nanoTime();
@@ -260,7 +262,10 @@ public final class CompositePlanner {
                         TileProjector.projectLayerIntoFirst(fboBLayer, dirtyList, tileSize, tilesToDraw);
                     }
                 }
-                factoryContext = new ShaderFactoryContext(tilesToDraw, viewTileInfo, resolvedBundables, context);
+                factoryContext = new ShaderFactoryContext(
+                        tilesToDraw, viewTileInfo,
+                        resolvedBundables, context,
+                        imageAABB);
 
                 if (Objects.equals(shaderKey, Blends.NORMAL)) {
                     shader = SimpleNormalShaderFactory.INSTANCE.create(factoryContext);

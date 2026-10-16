@@ -7,6 +7,7 @@ import top.kzre.krro.canvas.gl.resource.GLProgram;
 import top.kzre.krro.canvas.gl.resource.GLProgramCache;
 import top.kzre.krro.canvas.gl.tile.TextureTileSlot;
 import top.kzre.krro.canvas.gl.tile.TileRef;
+import top.kzre.krro.canvas.gl.util.Tuple4f;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,8 +24,8 @@ public final class SimpleNormalShaderFactory implements ShaderFactory {
         ShaderLayerTileSet tileSet = context.getTileSet();
         int tileSize = context.getContext().getTileSize();
         GLProgramCache programs = compositeContext.getProgramCache();
-
+        Tuple4f imageAABB = context.getImageAABB();
         return new NormalShader(
-                ()->programs.get(Blends.NORMAL), tileSet, viewInfo, tileSize, bindables);
+                ()->programs.get(Blends.NORMAL), tileSet, viewInfo, tileSize, bindables, imageAABB);
     }
 }

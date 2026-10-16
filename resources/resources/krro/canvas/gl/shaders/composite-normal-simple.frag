@@ -35,6 +35,9 @@ uniform float uTileSize;
 
 uniform vec2  uViewport;
 
+uniform vec2 uImageMinPoint;
+uniform vec2 uImageMaxPoint;
+
 out vec4 fragColor;
 
 vec4 sampleTexture(int unit, vec3 uv) {
@@ -59,6 +62,12 @@ vec4 sampleTexture(int unit, vec3 uv) {
 
 void main() {
     if (vCount <= 0) {
+        fragColor = vec4(0);
+        return;
+    }
+
+    if(any(lessThan(vPixel, uImageMinPoint)) ||
+        any(greaterThan(vPixel, uImageMaxPoint))){
         fragColor = vec4(0);
         return;
     }
