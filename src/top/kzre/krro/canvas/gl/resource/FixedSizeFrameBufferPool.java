@@ -16,14 +16,10 @@ import java.util.concurrent.CompletableFuture;
  * 时如果某个 slot 的全部 FBO 都空闲，该 slot 从池中移除，纹理
  * 归还 texturePool。slot 数跟随实际并发持有量动态升降。
  *
- * <p><b>无容量上限</b>：真正的资源约束在 {@link FixedSizeTexturePool}
- * 的缓存策略。slot 数可能增长到"用户同时持有的最大 FBO 数"——
- * 用户不归还导致的无界增长是用户侧的内存泄漏。
- *
- * <p><b>无自有生命周期</b>：本池只是 texturePool 之上的视图层。
- * {@link #close()} 转发给 texturePool，不拒绝用户归还。已借出的
- * FBO 在归还时归还纹理——如果 texturePool 已关闭，纹理池会直接
- * 释放它。
+ * <p><b>延迟关闭</b>：{@link #close()} 时——texturePool 立即关闭，
+ * 全空闲的 slot 立即释放（归还纹理 + 关闭 FBO）；仍有 FBO 借出的
+ * slot 由 {@link DeferredClose} 接管，等这些 FBO 全部归还后释放。
+ * 已借出的 FBO 在使用期间其底层纹理不会被提前释放。
  *
  * <p><b>线程契约</b>：{@code acquire} / {@code release} 涉及
  * texturePool 的借还，但 texturePool 的操作不调 GL（GL 释放由
@@ -37,8 +33,11 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
     /** 已创建的 slot。随 acquire/release 动态增减。 */
     private final List<TextureSlot> slots = new ArrayList<>();
 
-    /** 借出中的 FBO 计数。 */
-    private int activeCount = 0;
+    /**
+     * 延迟关闭器。close 时若仍有 FBO 借出——此字段非 null，
+     * 全部归还后触发实际释放并置回 null。
+     */
+    private DeferredClose deferredClose = null;
 
     private final Object lock = new Object();
 
@@ -46,6 +45,7 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
      * 持久保存的 fbo 数量
      */
     private final int capacity;
+
     /**
      * 持久保存的 slot, 每个slot是一张纹理
      */
@@ -83,16 +83,17 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
      * <p>优先复用已有 slot 的空闲 FBO；全部占用时从 texturePool
      * 借一张新纹理创建新 slot。
      *
-     * @throws IllegalStateException texturePool 已关闭
+     * @throws IllegalStateException 池已进入关闭流程
      */
     public GLFramebuffer acquire() {
         requireGlThread();
 
         synchronized (lock) {
+            requireNotClosing();
+
             for (TextureSlot slot : slots) {
                 GLFramebuffer fbo = slot.tryAcquire();
                 if (fbo != null) {
-                    activeCount++;
                     return fbo;
                 }
             }
@@ -100,7 +101,6 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
             GLTexture tex = texturePool.acquire();
             TextureSlot slot = TextureSlot.create(tex);
             slots.add(slot);
-            activeCount++;
             return slot.tryAcquire();
         }
     }
@@ -136,19 +136,19 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
      * @param excludedTextures 需要排除的纹理集合，null 表示不排除
      * @return 两个来自不同纹理的空闲 FBO
      * @throws IllegalStateException 空闲 FBO 不足两个（未先 ensure），
-     *                               或来自两个不同纹理的空闲 FBO 不足
+     *                               或来自两个不同纹理的空闲 FBO 不足，
+     *                               或池已进入关闭流程
      */
     public GLFramebuffer[] acquire2IdleExcluding(Set<GLTexture> excludedTextures) {
         synchronized (lock) {
+            requireNotClosing();
+
             GLFramebuffer a = null;
             GLFramebuffer b = null;
 
             for (TextureSlot slot : slots) {
                 if (excludedTextures != null
                         && excludedTextures.contains(slot.texture())) {
-                    System.out.println("skip excluding texture: " + slot.texture()
-                    + "excluded: " + excludedTextures.size()
-                    + "slots size: " + slots.size());
                     continue;
                 }
                 GLFramebuffer fbo = slot.tryAcquire();
@@ -163,9 +163,7 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
             }
 
             if (a == null || b == null) {
-                // 已取出的 a 归还，避免泄漏——b 为空时 a 已经离开 idle 队列
                 if (a != null) {
-                    // 找到 a 所属的 slot 归还
                     for (TextureSlot slot : slots) {
                         if (slot.owns(a)) {
                             slot.release(a);
@@ -178,7 +176,6 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
                                 + "call ensureSlotsWithIdleAtLeastExcluding(2, 1, excluded) first");
             }
 
-            activeCount += 2;
             return new GLFramebuffer[]{ a, b };
         }
     }
@@ -190,12 +187,14 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
     /**
      * 归还 FBO。
      *
-     * <p><b>低水位保留</b>：slot 全部空闲时不一定回收——只有当
+     * <p><b>正常路径</b>：slot 全部空闲时不一定回收——只有当
      * {@code slots.size() > slotCapacity} 时才移除最尾部的空闲 slot，
      * 归还其纹理给 texturePool。低水位以下的空闲 slot 常驻——保留
      * 已经创建好的 FBO，避免下次 acquire 又走 glGenFramebuffers。
      *
-     * <p>峰值过后 slot 数回落到 {@code slotCapacity}，不再继续缩水。
+     * <p><b>关闭路径</b>：{@link #close()} 已调用且仍有借出——由
+     * {@link DeferredClose} 接管。本方法递减其剩余计数，归零时触发
+     * 所有 pending slot 的释放。
      *
      * <p>不属于本池的 FBO 抛异常——静默忽略会导致 FBO 永久泄漏。
      * null 或已释放的 FBO 静默忽略（幂等归还）。
@@ -206,27 +205,36 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
         if (framebuffer.isReleased()) return;
 
         TextureSlot slotToClose = null;
+        DeferredClose closer = null;
         boolean found = false;
 
         synchronized (lock) {
-            for (int i = 0; i < slots.size(); i++) {
-                TextureSlot slot = slots.get(i);
-                if (!slot.owns(framebuffer)) continue;
-
-                found = true;
-                slot.release(framebuffer);
-                activeCount--;
-
-                // 全空闲且当前 slot 数超过低水位——回收。
-                // 低水位以下的空闲 slot 保留常驻，避免下次 acquire
-                // 又要重新 glGenFramebuffers。
-                if (slot.isFullyIdle() && slots.size() > slotCapacity) {
-//                    System.out.println("release fbo pool slot, "
-//                    + "slot size:" + slots.size());
-                    texturePool.release(slot.texture());
-                    slotToClose = slots.remove(i);
+            if (deferredClose != null) {
+                // ── 关闭中——由 closer 接管 ──
+                if (!deferredClose.owns(framebuffer)) {
+                    throw new IllegalArgumentException(
+                            "framebuffer does not belong to this pool");
                 }
-                break;
+                found = true;
+                if (deferredClose.onRelease()) {
+                    closer = deferredClose;
+                    deferredClose = null;
+                }
+            } else {
+                // ── 正常路径 ──
+                for (int i = 0; i < slots.size(); i++) {
+                    TextureSlot slot = slots.get(i);
+                    if (!slot.owns(framebuffer)) continue;
+
+                    found = true;
+                    slot.release(framebuffer);
+
+                    if (slot.isFullyIdle() && slots.size() > slotCapacity) {
+                        texturePool.release(slot.texture());
+                        slotToClose = slots.remove(i);
+                    }
+                    break;
+                }
             }
         }
 
@@ -236,7 +244,14 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
         }
 
         if (slotToClose != null) {
-            ExecutorUtils.submitIfThread(getGlExecutor(), slotToClose::close);
+            // 归还单个 slot——释放其 FBO
+            List<TextureSlot> singleton = Collections.singletonList(slotToClose);
+            ExecutorUtils.submitIfThread(getGlExecutor(), () ->
+                    ResourceUtils.closeDelayError(singleton));
+        }
+
+        if (closer != null) {
+            releaseSlots(closer.pendingSlots);
         }
     }
 
@@ -245,49 +260,81 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
     // ═══════════════════════════════════════════════
 
     /**
-     * 关闭底层纹理池。释放 texturePool 中缓存的空闲纹理。
+     * 关闭池。
      *
-     * <p><b>转发语义</b>：本池没有自有生命周期。已借出的 FBO 不受
-     * 影响——它们在归还时归还纹理给 texturePool，如果 texturePool
-     * 已关闭，纹理池会直接释放它。
+     * <p><b>texturePool 立即关闭</b>——它自身处理"关闭后归还"的语义，
+     * 后续归还给它的纹理仍会正常释放。
      *
-     * <p><b>幂等</b>：由 texturePool.close 的内部语义决定。
+     * <p><b>全空闲的 slot 立即释放</b>——归还纹理、关闭 FBO。
+     *
+     * <p><b>有借出的 slot 延迟释放</b>——由 {@link DeferredClose} 接管，
+     * 等这些 FBO 全部归还后释放。
+     *
+     * <p><b>非幂等</b>：重复调用抛异常。
      */
     @Override
     public void close() {
-        List<TextureSlot> toClose;
-        synchronized (lock) {
-            toClose = new ArrayList<>(slots);
-            slots.clear();
-        }
+        List<TextureSlot> immediate;
+        List<TextureSlot> pending;
 
-        // 归还纹理——逐个 try，单个失败不中断
-        RuntimeException error = null;
-        for (TextureSlot slot : toClose) {
-            try {
-                texturePool.release(slot.texture());
-            } catch (RuntimeException e) {
-                error = ResourceUtils.accumulateException(error, e);
+        synchronized (lock) {
+            if (deferredClose != null) {
+                throw new IllegalStateException(
+                        "pool already closed or closing");
+            }
+
+            immediate = new ArrayList<>();
+            pending  = new ArrayList<>();
+            for (TextureSlot slot : slots) {
+                if (slot.isFullyIdle()) {
+                    immediate.add(slot);
+                } else {
+                    pending.add(slot);
+                }
+            }
+            slots.clear();
+
+            if (!pending.isEmpty()) {
+                int outstanding = 0;
+                for (TextureSlot slot : pending) {
+                    outstanding += slot.outstanding();
+                }
+                deferredClose = new DeferredClose(pending, outstanding);
             }
         }
 
-        final RuntimeException texError = error;
-        try {
-            ExecutorUtils.submitIfThread(getGlExecutor(), () -> {
-                RuntimeException fboError = ResourceUtils.closeDelayError(toClose);
-                RuntimeException merged = ResourceUtils.accumulateException(texError, fboError);
-                if (merged != null) throw merged;
-            });
-        } finally {
-            texturePool.close();
+        // 全空闲的 slot 立即释放
+        if (!immediate.isEmpty()) {
+            releaseSlots(immediate);
         }
+
+        // 纹理池立即关闭——不再接受新的 acquire，但归还仍有效
+        texturePool.close();
+    }
+
+    /**
+     * 释放一组 slot——归还纹理给 texturePool、在 GL 线程上关闭 FBO。
+     *
+     * <p>texturePool 可能已关闭——其 release 语义允许关闭后归还，
+     * 会直接释放对应纹理。
+     */
+    private void releaseSlots(List<TextureSlot> toRelease) {
+        if (toRelease.isEmpty()) return;
+
+        for (TextureSlot slot : toRelease) {
+            try {
+                texturePool.release(slot.texture());
+            } catch (RuntimeException ignored) {
+                // 单个纹理归还失败不中断——继续处理其他 slot
+            }
+        }
+
+        ExecutorUtils.submitIfThread(getGlExecutor(), () ->
+                ResourceUtils.closeDelayError(toRelease));
     }
 
     /**
      * 池是否已关闭。转发自底层 {@link FixedSizeTexturePool}。
-     *
-     * <p>本池没有独立于 texturePool 的生命周期。查询关闭状态等于
-     * 查询 texturePool 的关闭状态。
      */
     public boolean isClosed() {
         return texturePool.isClosed();
@@ -304,29 +351,12 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
         }
     }
 
-
     /**
      * 统计空闲 FBO 数不低于 {@code leastIdle}、且纹理不在排除集合中的
      * slot 数量。
-     *
-     * <p><b>用途</b>：调用方在调度前预判 {@link #acquire2IdleExcluding(Set)
-     * acquire2Excluding} 是否会触发 {@code texturePool.acquire()} 的 GL
-     * 调度——即"不借新纹理、仅从现有 slot 取出两张不同纹理的空闲 FBO"
-     * 是否可行。判据：
-     * <pre>
-     *   countSlotsWithIdleAtLeastExcluding(1, excluded) &gt;= 2
-     * </pre>
-     *
-     * <p><b>快照语义</b>：并发场景下数值随时会变，不构成任何保留承诺——
-     * 调用方自行理解后续 {@code acquire} 仍可能借新纹理。
-     *
-     * @param leastIdle        每个 slot 计入统计所需的最少空闲 FBO 数；
-     *                         0 时统计全部未被排除的 slot
-     * @param excludedTextures 需要排除的纹理集合，null 表示不排除
-     * @return 满足条件的 slot 数
      */
     private int countSlotsWithIdleAtLeastExcluding(int leastIdle,
-                                                  Set<GLTexture> excludedTextures) {
+                                                   Set<GLTexture> excludedTextures) {
         synchronized (lock) {
             int n = 0;
             for (TextureSlot slot : slots) {
@@ -346,29 +376,22 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
      * 确保至少有 {@code count} 个 slot 满足"空闲 FBO 数 >= leastIdle"，
      * 且纹理不在 {@code excludedTextures} 中。不足则借新纹理创建新 slot。
      *
-     * <p><b>与 {@link #acquire2IdleExcluding} 的关系</b>：本方法是"预扩容量"
-     * 的显式操作——调用方在真正需要之前确保池里有足够的可用 slot，之后
-     * {@code acquire2Excluding} 就能走纯复用路径（无 GL 调度）。
-     *
      * <p><b>快速路径</b>：已满足时返回已完成的 future，无 GL 调度。
      *
-     * <p><b>慢速路径</b>：提交到 GL 线程创建新 slot。提交时不在锁内
-     * 做 GL 调用——锁只用于更新 {@code slots} 列表。
+     * <p><b>慢速路径</b>：提交到 GL 线程创建新 slot。GL 线程上的二次
+     * 检查保证并发调用不会超量创建。
      *
-     * <p><b>并发</b>：两次并发调用可能触发两次提交，但 GL 线程上的
-     * 二次检查保证不会超量创建——后执行者发现已补足时直接返回。
-     *
-     * @param count             需要的 slot 数
-     * @param leastIdle         每个计入的 slot 最少空闲 FBO 数
-     * @param excludedTextures  需要排除的纹理集合，null 表示不排除
-     * @return future，完成后池中至少 {@code count} 个 slot 满足条件
+     * @throws IllegalStateException 池已进入关闭流程
      */
     public CompletableFuture<Void> ensureSlotsWithIdleAtLeastExcluding(
             int count,
             int leastIdle,
             Set<GLTexture> excludedTextures) {
 
-        // 快速路径——不涉及 GL，可在任意线程判断
+        synchronized (lock) {
+            requireNotClosing();
+        }
+
         int currentIdle = countSlotsWithIdleAtLeastExcluding(leastIdle, excludedTextures);
         if (currentIdle >= count) {
             return CompletableFuture.completedFuture(null);
@@ -378,32 +401,28 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
 
         return ExecutorUtils.submitIfThread(glExecutor,
                 () -> {
-                    // GL 线程上重数——并发调用可能已经补足
+                    synchronized (lock) {
+                        if (deferredClose != null) return;
+                    }
+
                     int nowIdle = countSlotsWithIdleAtLeastExcluding(leastIdle, excludedTextures);
                     int need = count - nowIdle;
 
                     for (int i = 0; i < need; i++) {
-                        // 借一张纹理——可能来自 texturePool 的空闲队列，
-                        // 也可能新建。两者都需要 GL 线程，此处已在。
                         GLTexture tex = texturePool.acquire();
-
-                        // TextureSlot 构造会为每一层 wrap 出一个 GLFramebuffer，
-                        // 涉及 GL 调用——必须在锁外。
                         TextureSlot slot = TextureSlot.create(tex);
 
-                        // 只有把 slot 纳入 slots 列表需要互斥。
                         synchronized (lock) {
+                            if (deferredClose != null) {
+                                // 关闭流程启动——刚创建的 slot 立即释放
+                                texturePool.release(slot.texture());
+                                slot.close();
+                                return;
+                            }
                             slots.add(slot);
                         }
                     }
                 });
-    }
-
-    /** 借出中的 FBO 数。 */
-    public int getActiveCount() {
-        synchronized (lock) {
-            return activeCount;
-        }
     }
 
     @Override
@@ -411,28 +430,70 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
         return texturePool.getGlExecutor();
     }
 
+    /** 必须在 {@link #lock} 内调用。 */
+    private void requireNotClosing() {
+        if (deferredClose != null) {
+            throw new IllegalStateException("pool is closing");
+        }
+    }
+
     // ═══════════════════════════════════════════════
-    // 内部类：一张纹理 + 它的全部 FBO
+    // 内部类
     // ═══════════════════════════════════════════════
+
+    /**
+     * 延迟关闭器。{@link #close()} 时仍有 FBO 借出时创建——接管这些
+     * slot，等待剩余借出归还。归零时由 {@link #release(GLFramebuffer)}
+     * 触发释放。
+     */
+    private static final class DeferredClose {
+
+        final List<TextureSlot> pendingSlots;
+        private int remaining;
+
+        DeferredClose(List<TextureSlot> pendingSlots, int remaining) {
+            this.pendingSlots = pendingSlots;
+            this.remaining = remaining;
+        }
+
+        /**
+         * 递减剩余借出计数。返回 {@code true} 表示全部归还——由调用方
+         * 触发释放。在 pool 的 {@code lock} 内调用。
+         */
+        boolean onRelease() {
+            remaining--;
+            return remaining == 0;
+        }
+
+        /** 判断 framebuffer 是否属于接管的 slot 之一。在 {@code lock} 内调用。 */
+        boolean owns(GLFramebuffer fb) {
+            for (TextureSlot slot : pendingSlots) {
+                if (slot.owns(fb)) return true;
+            }
+            return false;
+        }
+    }
 
     /**
      * 一个纹理槽位。管一张多层纹理，为每层创建一个 FBO。
      */
-    private final static class TextureSlot  implements AutoCloseable{
-        private final GLTexture            texture;
-        private final List<GLFramebuffer>  fbos;
-        private final Deque<GLFramebuffer> idle;
+    private final static class TextureSlot implements AutoCloseable {
 
-        private TextureSlot(GLTexture texture, List<GLFramebuffer> fbos, Deque<GLFramebuffer> idle) {
+        private final GLTexture texture;
+        private final List<GLFramebuffer> fbos;
+        private final Deque<GLFramebuffer> idle;
+        private final int capacity;
+        private TextureSlot(GLTexture texture,
+                            List<GLFramebuffer> fbos,
+                            Deque<GLFramebuffer> idle) {
             this.texture = texture;
             this.fbos = fbos;
+            capacity = fbos.size();
             this.idle = idle;
         }
 
         private static TextureSlot create(GLTexture texture) {
-
             int layers = texture.getLayers();
-
             List<GLFramebuffer> list = new ArrayList<>(layers);
             for (int i = 0; i < layers; i++) {
                 list.add(GLFramebuffer.wrap(texture, i));
@@ -452,7 +513,12 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
 
         /** 全部 FBO 都空闲。 */
         boolean isFullyIdle() {
-            return idle.size() == fbos.size();
+            return idle.size() == capacity;
+        }
+
+        /** 借出中的 FBO 数。 */
+        int outstanding() {
+            return capacity - idle.size();
         }
 
         boolean owns(GLFramebuffer fbo) {

@@ -4,6 +4,7 @@ import top.kzre.krro.canvas.gl.resource.*;
 import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
 import top.kzre.krro.canvas.gl.tile.GLAtlasPool;
 import top.kzre.krro.canvas.gl.util.ExecutorUtils;
+import top.kzre.krro.canvas.gl.util.NumberUtils;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.TiledCanvas;
 
@@ -70,7 +71,6 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
     private final TiledCanvas emptyCanvasTpl;
 
     private final int tileSize;
-    private final int viewFboPoolCapacity;
     private final PixelFormat pixelFormat;
     private final NoGLTexturePool noTexPool;
 
@@ -111,7 +111,6 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
         this.atlasPool       = atlasPool;
         this.atlasPoolPage   = atlasPool.page();
         this.tileSize        = tileSize;
-        this.viewFboPoolCapacity = viewFboPoolCapacity;
         this.pixelFormat = pixelFormat;
         this.noTexPool = new NoGLTexturePool(glExecutor);
 
@@ -146,8 +145,8 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
         if (width <= 0 || height <= 0) {
             return false;
         }
-        int alignedW = alignUp(width,  tileSize);
-        int alignedH = alignUp(height, tileSize);
+        int alignedW = NumberUtils.alignUp(width,  tileSize);
+        int alignedH = NumberUtils.alignUp(height, tileSize);
         return viewWidth != alignedW || viewHeight != alignedH;
     }
 
@@ -174,8 +173,8 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
                     "invalid viewport: " + width + "x" + height);
         }
 
-        int alignedW = alignUp(width,  tileSize);
-        int alignedH = alignUp(height, tileSize);
+        int alignedW = NumberUtils.alignUp(width,  tileSize);
+        int alignedH = NumberUtils.alignUp(height, tileSize);
 
         if (viewWidth == alignedW && viewHeight == alignedH) {
             return;
@@ -314,19 +313,11 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
         return emptyCanvasTpl.copy();
     }
 
-    public TiledCanvas newReadonlyCanvas()
-    {
-        return emptyCanvasTpl.copy().setReadonly(true);
-    }
-
     public GLProgramCache getProgramCache()
     {
         return glProgramManager.getCache();
     }
 
-    private static int alignUp(int value, int multiple) {
-        return ((value + multiple - 1) / multiple) * multiple;
-    }
 
     public int getMinSingleDrawnTiles() {
         return 200;
