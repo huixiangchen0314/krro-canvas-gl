@@ -23,16 +23,13 @@ uniform sampler2DArray uTexture9;
 uniform sampler2DArray uTexture10;
 uniform sampler2DArray uTexture11;
 uniform sampler2DArray uTexture12;
-uniform sampler2DArray uTexture13;
-uniform sampler2DArray uTexture14;
-uniform sampler2DArray uTexture15;
+
 
 // 每个 bindable 的 (1/edgeU, 1/edgeV)——单位瓦片在纹理 UV 空间中的占比。
 // 索引对齐 bindable 的单元号；atlas 两项相等，FBO 两项各自按视口尺寸算。
-uniform vec2 uTextureScales[16];
+uniform vec2 uTextureScales[13];
 
 uniform float uTileSize;
-
 uniform vec2  uViewport;
 
 uniform vec2 uImageMinPoint;
@@ -54,9 +51,6 @@ vec4 sampleTexture(int unit, vec3 uv) {
     if (unit == 10) return texture(uTexture10, uv);
     if (unit == 11) return texture(uTexture11, uv);
     if (unit == 12) return texture(uTexture12, uv);
-    if (unit == 13) return texture(uTexture13, uv);
-    if (unit == 14) return texture(uTexture14, uv);
-    if (unit == 15) return texture(uTexture15, uv);
     return vec4(0);
 }
 

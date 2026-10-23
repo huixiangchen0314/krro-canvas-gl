@@ -12,3 +12,5 @@ krro-canvas-gl.iml
 
 target/
 .nrepl-port
+
+shaders/out/

@@ -1,0 +1,3 @@
+{:inline-all-lambda? true                                   ;; 启用 lambda 内联
+ :call-driven-interface? true                               ;; 启用调用点驱动类型推断
+ }
