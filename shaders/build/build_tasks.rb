@@ -4,6 +4,12 @@
 
 require_relative "lib/build_dsl"
 
+# 顶点着色器
+cljh_project "tile_comp", template: :composite do
+    entries "src/composite/vertex.clj"
+    output "out/tile_comp"
+end
+
 # 20 个标准合成公式(除了dissolve 以外)
 %w[normal16 multiply16 screen16 darken16 soft_light16 lighten16 difference16
    exclusion16 overlay16 hard_light16 soft_light16
@@ -13,3 +19,4 @@ require_relative "lib/build_dsl"
     entries "src/composite/#{name}.clj"
   end
 end
+

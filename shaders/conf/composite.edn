@@ -1,2 +1,10 @@
 ;; compo-one16 的编译器配置
-{}
+{:gl-vertex-semantic-locations
+ {:position 0                                               ;; 顶点quad
+  :user0 1                                                  ;; 坐标实例
+  }
+ :gl-varying-semantic-locations
+ {:user0 0                                                  ;; 像素坐标
+  :user1 1                                                  ;; 实例偏移
+  :user2 2                                                  ;; 图层瓦片个数
+  }}
