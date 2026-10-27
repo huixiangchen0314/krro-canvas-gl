@@ -51,25 +51,24 @@
       (float4 0.0 0.0 0.0 0.0)
       (tile-fold/fold-tiles
         uIndexTable vOffset vCount
-        (fn [tile-idx acc]
-          (let [tidx             (:x tile-idx)
-                e0               (load uTileTable (+ (* tidx 2) 0))
-                e1               (load uTileTable (+ (* tidx 2) 1))
-                uv0              (float2 (:x e0) (:y e0))
-                ^int unit        (:z e0)
-                ^int tex-layer   (:w e0)
-                tile-origin      (float2 (:x e1) (:y e1))
-                ^int layer-entry (:z e1)
-                mat2d4           (load uLayerTable (+ (* layer-entry 2) 0))
-                mat2d2+alpha     (load uLayerTable (+ (* layer-entry 2) 1))
-                layer-pos        (layout/layer-transform mat2d4 mat2d2+alpha vPixel)
-                local-uv         (/ (- layer-pos tile-origin) uTileSize)
-                local-uv         (float2 (:x local-uv) (- 1.0 (:y local-uv)))]
+        (fn [tile-offset color-acc]
+          (let [tex-location (load uTileTable (+ (* tile-offset 2) 0))
+                tile-origin+layer-offset (load uTileTable (+ (* tile-offset 2) 1))
+                uv0 (float2 (:x tex-location) (:y tex-location))
+                tex-unit (int (:z tex-location))
+                tex-layer (int (:w tex-location))
+                tile-origin      (float2 (:x tile-origin+layer-offset) (:y tile-origin+layer-offset))
+                layer-offset (int (:z tile-origin+layer-offset))
+                mat2d4 (load uLayerTable (+ (* layer-offset 2) 0))
+                mat2d2+alpha (load uLayerTable (+ (* layer-offset 2) 1))
+                layer-pos (layout/layer-transform mat2d4 mat2d2+alpha vPixel)
+                local-uv (/ (- layer-pos tile-origin) uTileSize)
+                local-uv (float2 (:x local-uv) (- 1.0 (:y local-uv)))]
             (if (or (any (lessThan local-uv (float2 0.0 0.0)))
                     (any (greaterThan local-uv (float2 1.0 1.0))))
-              acc
-              (let [scale (%%aget uTextureScales unit)
-                    uv    (+ uv0 (* local-uv scale))
-                    c     (sample-fn unit (float3 (:x uv) (:y uv) tex-layer))
-                    c'    (* c (:z mat2d2+alpha))]
-                (compose-fn c' acc)))))))))
+              color-acc
+              (let [tile-scale (nth uTextureScales tex-unit)
+                    uv    (+ uv0 (* local-uv tile-scale))
+                    canvas-color     (sample-fn tex-unit (float3 (:x uv) (:y uv) tex-layer))
+                    layer-color    (* canvas-color (:z mat2d2+alpha))]
+                (compose-fn layer-color color-acc)))))))))

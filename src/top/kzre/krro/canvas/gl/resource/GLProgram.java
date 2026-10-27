@@ -33,6 +33,11 @@ import static org.lwjgl.opengl.GL20.*;
  * {@link IllegalArgumentException}——不静默忽略。这是有意为之：
  * 拼错的 uniform 名或未使用的 uniform 应该尽早暴露。
  *
+ * <p>需要「不存在时静默跳过」时使用 {@code setXxxIfPresent} 系列方法，
+ * 它们通过 {@link #uniformLocationOptional(String)} 查询，找不到直接返回。
+ * 注意：{@code IfPresent} 只对「uniform 不存在」静默，对参数非法
+ * （null、长度不对）仍然抛 {@link IllegalArgumentException}。
+ *
  * <h2>矩阵命名</h2>
  * <ul>
  *   <li>{@link #setMat2D} —— 6 元素 2D 仿射矩阵 {@code [a b c d e f]}，
@@ -163,7 +168,7 @@ public final class GLProgram {
     }
 
     // ═══════════════════════════════════════════════
-    // Uniform
+    // Uniform 查询
     // ═══════════════════════════════════════════════
 
     /**
@@ -173,40 +178,63 @@ public final class GLProgram {
      * 之后从缓存返回。同一 program 上反复设置同一个 uniform
      * 无重复查询开销。
      *
+     * <p>即使之前通过 {@link #uniformLocationOptional(String)}
+     * 缓存过 {@code -1}，本方法仍会正确抛异常——缓存命中与否
+     * 不影响「找不到即抛」的契约。
+     *
      * @param name uniform 名（GLSL 源码中的标识符）
      * @return 非负的 location 值
      * @throws IllegalArgumentException uniform 不存在或已被优化掉
      */
     public int uniformLocation(String name) {
-        return uniformLocations.computeIfAbsent(name, n -> {
-            int loc = glGetUniformLocation(handle, n);
-            if (loc < 0) {
-                throw new IllegalArgumentException(
-                        "Uniform not found (or optimized out): " + n);
-            }
-            return loc;
-        });
+        int loc = uniformLocations.computeIfAbsent(
+                name, n -> glGetUniformLocation(handle, n));
+        if (loc < 0) {
+            throw new IllegalArgumentException(
+                    "Uniform not found (or optimized out): " + name);
+        }
+        return loc;
     }
 
+    /**
+     * 查询 uniform location——找不到返回 -1，不抛异常。
+     * 用于「调用方不确定 uniform 是否被优化掉」的场景。
+     */
+    public int uniformLocationOptional(String name) {
+        Integer cached = uniformLocations.get(name);
+        if (cached != null) return cached;
+        int loc = glGetUniformLocation(handle, name);
+        uniformLocations.put(name, loc);   // 缓存 -1 避免重复查询
+        return loc;
+    }
+
+    // ═══════════════════════════════════════════════
+    // Uniform 上传（不存在即抛）
+    // ═══════════════════════════════════════════════
+
     /** 上传 int uniform（用于 sampler 单元、标志位等）。 */
-    public void setInt(String name, int v) { glUniform1i(uniformLocation(name), v); }
+    public void setInt(String name, int v) {
+        glUniform1i(checkedLoc(name), v);
+    }
 
     /** 上传 float uniform。 */
-    public void setFloat(String name, float v) { glUniform1f(uniformLocation(name), v); }
+    public void setFloat(String name, float v) {
+        glUniform1f(checkedLoc(name), v);
+    }
 
     /** 上传 vec2 uniform。 */
     public void setVec2(String name, float x, float y) {
-        glUniform2f(uniformLocation(name), x, y);
+        glUniform2f(checkedLoc(name), x, y);
     }
 
     /** 上传 vec3 uniform。 */
     public void setVec3(String name, float x, float y, float z) {
-        glUniform3f(uniformLocation(name), x, y, z);
+        glUniform3f(checkedLoc(name), x, y, z);
     }
 
     /** 上传 vec4 uniform。 */
     public void setVec4(String name, float x, float y, float z, float w) {
-        glUniform4f(uniformLocation(name), x, y, z, w);
+        glUniform4f(checkedLoc(name), x, y, z, w);
     }
 
     /**
@@ -225,20 +253,11 @@ public final class GLProgram {
      *
      * @param name  uniform 名
      * @param mat2d 6 元素仿射矩阵
-     * @throws IllegalArgumentException 数组长度 &lt; 6
+     * @throws IllegalArgumentException 数组为 null 或长度 &lt; 6
      */
     public void setMat2D(String name, float[] mat2d) {
-        if (mat2d == null || mat2d.length < 6) {
-            throw new IllegalArgumentException(
-                    "mat2d must have at least 6 elements, got "
-                            + (mat2d == null ? "null" : mat2d.length));
-        }
-        float[] mat3f = {
-                mat2d[0], mat2d[1], 0,
-                mat2d[2], mat2d[3], 0,
-                mat2d[4], mat2d[5], 1
-        };
-        glUniformMatrix3fv(uniformLocation(name), false, mat3f);
+        float[] mat3f = toMat3(mat2d);
+        glUniformMatrix3fv(checkedLoc(name), false, mat3f);
     }
 
     /**
@@ -246,15 +265,11 @@ public final class GLProgram {
      *
      * @param name uniform 名
      * @param m16  16 元素列主序矩阵
-     * @throws IllegalArgumentException 数组长度 &lt; 16
+     * @throws IllegalArgumentException 数组为 null 或长度 &lt; 16
      */
     public void setMat4(String name, float[] m16) {
-        if (m16 == null || m16.length < 16) {
-            throw new IllegalArgumentException(
-                    "m16 must have at least 16 elements, got "
-                            + (m16 == null ? "null" : m16.length));
-        }
-        glUniformMatrix4fv(uniformLocation(name), false, m16);
+        requireMat4(m16);
+        glUniformMatrix4fv(checkedLoc(name), false, m16);
     }
 
     /**
@@ -262,9 +277,66 @@ public final class GLProgram {
      *
      * @param name uniform 名
      * @param arr  扁平化的 vec2 数组——{@code [x0,y0,x1,y1,...]}
+     * @throws IllegalArgumentException 数组为 null 或长度为奇数
      */
     public void setVec2Array(String name, float[] arr) {
-        glUniform2fv(uniformLocation(name), arr);
+        requireVec2Array(arr);
+        glUniform2fv(checkedLoc(name), arr);
+    }
+
+    // ═══════════════════════════════════════════════
+    // Uniform 上传（不存在时静默跳过）
+    // ═══════════════════════════════════════════════
+
+    /** 上传 int uniform——不存在时静默跳过。 */
+    public void setIntIfPresent(String name, int v) {
+        int loc = checkedLocOptional(name);
+        if (loc >= 0) glUniform1i(loc, v);
+    }
+
+    /** 上传 float uniform——不存在时静默跳过。 */
+    public void setFloatIfPresent(String name, float v) {
+        int loc = checkedLocOptional(name);
+        if (loc >= 0) glUniform1f(loc, v);
+    }
+
+    /** 上传 vec2 uniform——不存在时静默跳过。 */
+    public void setVec2IfPresent(String name, float x, float y) {
+        int loc = checkedLocOptional(name);
+        if (loc >= 0) glUniform2f(loc, x, y);
+    }
+
+    /** 上传 vec3 uniform——不存在时静默跳过。 */
+    public void setVec3IfPresent(String name, float x, float y, float z) {
+        int loc = checkedLocOptional(name);
+        if (loc >= 0) glUniform3f(loc, x, y, z);
+    }
+
+    /** 上传 vec4 uniform——不存在时静默跳过。 */
+    public void setVec4IfPresent(String name, float x, float y, float z, float w) {
+        int loc = checkedLocOptional(name);
+        if (loc >= 0) glUniform4f(loc, x, y, z, w);
+    }
+
+    /** 上传 vec2 数组 uniform——不存在时静默跳过。 */
+    public void setVec2ArrayIfPresent(String name, float[] arr) {
+        requireVec2Array(arr);
+        int loc = checkedLocOptional(name);
+        if (loc >= 0) glUniform2fv(loc, arr);
+    }
+
+    /** 上传 2D 仿射矩阵——不存在时静默跳过。 */
+    public void setMat2DIfPresent(String name, float[] mat2d) {
+        float[] mat3f = toMat3(mat2d);
+        int loc = checkedLocOptional(name);
+        if (loc >= 0) glUniformMatrix3fv(loc, false, mat3f);
+    }
+
+    /** 上传 4×4 矩阵——不存在时静默跳过。 */
+    public void setMat4IfPresent(String name, float[] m16) {
+        requireMat4(m16);
+        int loc = checkedLocOptional(name);
+        if (loc >= 0) glUniformMatrix4fv(loc, false, m16);
     }
 
     // ═══════════════════════════════════════════════
@@ -282,46 +354,52 @@ public final class GLProgram {
         released = true;
     }
 
-    /**
-     * 查询 uniform location——找不到返回 -1，不抛异常。
-     * 用于"调用方不确定 uniform 是否被优化掉"的场景。
-     */
-    public int uniformLocationOptional(String name) {
-        Integer cached = uniformLocations.get(name);
-        if (cached != null) return cached;
-        int loc = glGetUniformLocation(handle, name);
-        uniformLocations.put(name, loc);   // 缓存 -1 避免重复查询
-        return loc;
+    // ═══════════════════════════════════════════════
+    // 内部辅助
+    // ═══════════════════════════════════════════════
+
+    /** 已释放检查 + 必存在的 location。 */
+    private int checkedLoc(String name) {
+        checkAlive();
+        return uniformLocation(name);
     }
 
-    /** 上传 int uniform——不存在时静默跳过。 */
-    public void setIntIfPresent(String name, int v) {
-        int loc = uniformLocationOptional(name);
-        if (loc >= 0) glUniform1i(loc, v);
+    /** 已释放检查 + 可选的 location（找不到为 -1）。 */
+    private int checkedLocOptional(String name) {
+        checkAlive();
+        return uniformLocationOptional(name);
     }
 
-    /** 上传 float uniform——不存在时静默跳过。 */
-    public void setFloatIfPresent(String name, float v) {
-        int loc = uniformLocationOptional(name);
-        if (loc >= 0) glUniform1f(loc, v);
+    /** 校验 2D 仿射矩阵并补齐为列主序 mat3。 */
+    private static float[] toMat3(float[] mat2d) {
+        if (mat2d == null || mat2d.length < 6) {
+            throw new IllegalArgumentException(
+                    "mat2d must have at least 6 elements, got "
+                            + (mat2d == null ? "null" : mat2d.length));
+        }
+        return new float[]{
+                mat2d[0], mat2d[1], 0,
+                mat2d[2], mat2d[3], 0,
+                mat2d[4], mat2d[5], 1
+        };
     }
 
-    /** 上传 vec2 uniform——不存在时静默跳过。 */
-    public void setVec2IfPresent(String name, float x, float y) {
-        int loc = uniformLocationOptional(name);
-        if (loc >= 0) glUniform2f(loc, x, y);
+    /** 校验 4×4 矩阵长度。 */
+    private static void requireMat4(float[] m16) {
+        if (m16 == null || m16.length < 16) {
+            throw new IllegalArgumentException(
+                    "m16 must have at least 16 elements, got "
+                            + (m16 == null ? "null" : m16.length));
+        }
     }
 
-    /** 上传 vec3 uniform——不存在时静默跳过。 */
-    public void setVec3IfPresent(String name, float x, float y, float z) {
-        int loc = uniformLocationOptional(name);
-        if (loc >= 0) glUniform3f(loc, x, y, z);
-    }
-
-    /** 上传 vec4 uniform——不存在时静默跳过。 */
-    public void setVec4IfPresent(String name, float x, float y, float z, float w) {
-        int loc = uniformLocationOptional(name);
-        if (loc >= 0) glUniform4f(loc, x, y, z, w);
+    /** 校验扁平化 vec2 数组：非 null 且长度为偶数。 */
+    private static void requireVec2Array(float[] arr) {
+        if (arr == null || (arr.length & 1) != 0) {
+            throw new IllegalArgumentException(
+                    "vec2 array must have even length, got "
+                            + (arr == null ? "null" : arr.length));
+        }
     }
 
     // ═══════════════════════════════════════════════
@@ -329,10 +407,14 @@ public final class GLProgram {
     // ═══════════════════════════════════════════════
 
     /** GL program object 句柄。 */
-    public int getHandle() { return handle; }
+    public int getHandle() {
+        return handle;
+    }
 
     /** 是否已释放。 */
-    public boolean isReleased() { return released; }
+    public boolean isReleased() {
+        return released;
+    }
 
     private void checkAlive() {
         if (released) throw new IllegalStateException("GLProgram released");
@@ -349,6 +431,8 @@ public final class GLProgram {
      * 不匹配、未声明的符号等。
      */
     public static final class GLProgramException extends RuntimeException {
-        public GLProgramException(String message) { super(message); }
+        public GLProgramException(String message) {
+            super(message);
+        }
     }
 }

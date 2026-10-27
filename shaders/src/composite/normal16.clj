@@ -7,4 +7,4 @@
     [composite.compo-one16-helper :refer :all]
     [top.kzre.homunculus.backend.shader.dsl :refer :all]))
 
-(composite comp/multiply)
+(composite comp/normal)

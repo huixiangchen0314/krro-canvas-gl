@@ -24,19 +24,13 @@
    uIndexTable —— tile 索引 buffer（samplerBuffer）
    vOffset     —— tile 起始索引（int）
    vCount      —— tile 数量（int）
-   f           —— (fn [tile-idx acc] → acc')
-
-   内联展开后等价于：
-
-     (loop [i 0 acc init]
-       (if (>= i vCount)
-         acc
-         (let [tile-idx (load uIndexTable (+ vOffset i))]
-           (recur (+ i 1) (f tile-idx acc)))))"
+   f           —— (fn [tile-offset color-acc] → color-acc')
+"
   [uIndexTable vOffset vCount f]
   (loop [i   0
-         acc  (float4 0.0 0.0 0.0 0.0)]
+         color-acc  (float4 0.0 0.0 0.0 0.0)]
     (if (>= i vCount)
-      acc
-      (let [tile-idx (uload uIndexTable (+ vOffset i))]
-        (recur (+ i 1) (f tile-idx acc))))))
+      color-acc
+      (let [^int tile-offset (:x (uload uIndexTable (+ vOffset i)))]
+        (recur (+ i 1)
+               (f tile-offset color-acc))))))

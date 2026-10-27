@@ -181,6 +181,6 @@ public final class NormalShader extends AbstractShader {
             scales[i * 2 + 1] = 1.0f / edgeV;
         }
 
-        p.setVec2Array("uTextureScales", scales);
+        p.setVec2ArrayIfPresent("uTextureScales", scales);
     }
 }

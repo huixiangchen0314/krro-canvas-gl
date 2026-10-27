@@ -108,8 +108,17 @@
          (* (:z dst) (- 1.0 sa)))
       (+ sa (* da (- 1.0 sa))))))
 
-(defn ^:inline normal [src dst]
-  (compose src dst (* (:w dst) src)))
+(defn ^:inline normal [src backdrop]
+  (let [src-alpha (:w src) backdrop-alpha (:w backdrop)]
+    (float4
+      (+ (:x src)
+         (* (:x backdrop) (- 1.0 src-alpha)))
+      (+ (:y src)
+         (* (:y backdrop) (- 1.0 src-alpha)))
+      (+ (:z src)
+         (* (:z backdrop) (- 1.0 src-alpha)))
+      (+ src-alpha
+         (* backdrop-alpha (- 1.0 src-alpha))))))
 
 (defn ^:inline multiply [src dst]
   (compose src dst (* src dst)))

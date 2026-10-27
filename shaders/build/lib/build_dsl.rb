@@ -7,11 +7,13 @@
 #   - 若干库搜索路径      (lib_paths, 每个生成 -L <path>)
 #   - 若干配置文件        (configs, 用 ; 连接后传给 --config)
 #   - 一个输出目录        (output)
+#   - 若干编译后删除的产物 (discard，相对 output)
 # 最终调用 cljhc 生成产物，并注册成 Rake 任务。
 #
 # 所有访问器都是 "无参读取 / 有参追加 / 带 ! 覆盖" 的形式。
 # output 支持延迟求值：output { "out/#{name}" } 或 output "out/:name"，
 # 在项目实例化时才展开，name 是最终项目名。
+# discard 同样支持 ":name" 占位符。
 
 require "rake/clean"
 
@@ -44,12 +46,14 @@ module BuildDSL
         @lib_paths        = defaults.lib_paths.dup
         @configs          = defaults.configs.dup
         @output           = defaults.raw_output
+        @discard          = defaults.raw_discard.dup
       else
         @entries          = []
         @macro_namespaces = []
         @lib_paths        = []
         @configs          = []
         @output           = nil
+        @discard          = []
       end
       instance_eval(&blk) if blk
     end
@@ -118,6 +122,29 @@ module BuildDSL
       BuildDSL.resolve(v)
     end
 
+    # ---- discard ----
+    # 声明编译后要删除的产物，路径相对 output 目录，支持 ":name" 占位符。
+    # 用于「entry 参与编译但不产生独立输出」的场景，例如接口块策略下
+    # 每个 FS 项目都带上 vertex.clj，但运行时并不读 <name>.vert。
+    #
+    # 写法：
+    #   discard ":name.vert"     删除 out/<name>/<name>.vert
+    #   discard "*.vert"         删除 out/<name>/ 下所有 .vert
+    #   discard!                 清空继承来的声明（保留所有产物）
+    def discard(*patterns)
+      return @discard if patterns.empty?
+      @discard.concat(patterns.map(&:to_s))
+    end
+    alias discards discard
+    def discard!(*patterns) ; @discard = patterns.map(&:to_s) ; end
+
+    # 展开为绝对路径的 glob pattern 列表。
+    def resolved_discards
+      out = resolved_output
+      return [] if out.nil?
+      @discard.map { |p| File.join(out, p.gsub(":name", name.to_s)) }
+    end
+
     def task_name
       @task_name ||= "compile:#{@name}"
     end
@@ -136,9 +163,8 @@ module BuildDSL
     protected
 
     # 原始值（可能是 String 或 Proc），供模板/项目继承时使用。
-    def raw_output
-      @output
-    end
+    def raw_output  ; @output  ; end
+    def raw_discard ; @discard ; end
 
     private
 
@@ -196,6 +222,13 @@ module BuildDSL
       task proj.task_name do
         puts ">> #{proj.compile_args.join(" ")}" if ENV["CLJH_DEBUG"]
         sh(*proj.compile_args)
+
+        proj.resolved_discards.each do |pattern|
+          Dir.glob(pattern).sort.each do |f|
+            File.delete(f)
+            puts "  discarded: #{f}" if ENV["CLJH_DEBUG"]
+          end
+        end
       end
 
       task :compile => proj.task_name

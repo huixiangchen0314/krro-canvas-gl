@@ -11,3 +11,6 @@ desc "编译全部 cljh 项目"
 task :compile
 
 task :default => :compile
+
+# 语义location 版本开关
+# 不能用 __ 开头，用 gemsym 随便生成一个
