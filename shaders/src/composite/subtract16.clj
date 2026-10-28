@@ -3,9 +3,9 @@
     [composite.comp-one]
     [composite.comp-one16]
     [composite.tile-layout]
-    [composite.composite :as comp]
-    [composite.compo-one16-helper :refer :all]
-    [top.kzre.homunculus.backend.shader.dsl :refer :all]))
+    [composite.composite :as comp])
+  (:require-macros
+    [composite.compo-one16-helper :refer :all]))
 
 (composite comp/subtract)
 

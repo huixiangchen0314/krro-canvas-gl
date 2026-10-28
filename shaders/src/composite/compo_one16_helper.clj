@@ -1,5 +1,5 @@
 (ns composite.compo-one16-helper
-  (:require [top.kzre.homunculus.backend.shader.dsl :refer :all]))
+  (:require [top.kzre.homunculus.frontend.shader.dsl :refer :all]))
 
 ;; ── 宏辅助 ────────────────────────────────────────────
 

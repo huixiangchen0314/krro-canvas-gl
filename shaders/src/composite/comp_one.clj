@@ -35,8 +35,7 @@
    mat2d2 = (tx, ty, alpha, _)"
   (:require
     [composite.tile-fold :as tile-fold]
-    [composite.tile-layout :as layout]
-    [top.kzre.homunculus.backend.shader.dsl :refer :all]))
+    [composite.tile-layout :as layout]))
 
 (defn ^:inline comp-one
   "单组合成骨架。边界检查 + tile 折叠 + per-tile 采样与合成。"

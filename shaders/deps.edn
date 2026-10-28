@@ -1,0 +1,12 @@
+{:paths ["src" "resources"]
+ ;; 这个依赖是 cljh 库哦
+ :deps {}
+
+ :aliases
+ {:build
+  {:deps {io.github.clojure/tools.build {:mvn/version "0.9.6"}
+          top.kzre/cljh.tools.build {:mvn/version "0.1.0"}}
+   :ns-default build}
+  :run
+  {:extra-paths ["target/classes"]
+   :main-opts ["-m" "top.kzre.cljh.tools.build.core"]}}}

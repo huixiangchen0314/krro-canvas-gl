@@ -15,8 +15,7 @@
 
    闭包纯粹化让内联器的责任缩小为\"表达式替换\"，不需要处理
    嵌套 recur 或 recur 目标消歧。"
-  (:require
-    [top.kzre.homunculus.backend.shader.dsl :refer :all]))
+  )
 
 (defn ^:inline fold-tiles
   "遍历 tile 列表，对每个 tile 应用 f，累积结果。

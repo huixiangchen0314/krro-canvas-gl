@@ -9,8 +9,7 @@
    ▸ gl_Position —— NDC 位置
    ▸ vPixel / vOffset / vCount —— 见 TileVarying"
   (:require
-    [composite.tile-layout :as layout]
-    [top.kzre.homunculus.backend.shader.dsl :refer :all]))
+    [composite.tile-layout :as layout]))
 
 (defshader :vertex tileVS
            [^:position ^float2 aPos

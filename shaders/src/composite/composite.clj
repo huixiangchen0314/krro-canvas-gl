@@ -84,7 +84,7 @@
                    B = clamp(Cb + Cs, 0, 1)
 
    注：dissolve 需要逐像素随机数，纯函数无法实现，本 ns 不提供。"
-  (:require [top.kzre.homunculus.backend.shader.dsl :refer :all]))
+  )
 
 (defn ^:inline bcast4
   "把标量 x 广播成 float4。"

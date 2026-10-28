@@ -17,7 +17,7 @@
                     mat2d2 = (tx, ty, alpha, _)     平移 + 透明度
 
    字段含义是约定——变种只改 texture 槽位和采样分派。"
-  (:require [top.kzre.homunculus.backend.shader.dsl :refer :all]))
+  )
 
 ;; ═══════════════════════════════════════════
 ;; 通用配置

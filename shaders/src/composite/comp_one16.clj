@@ -10,8 +10,7 @@
 
    buffer 布局和 layer-transform 是通用约定——见
    composite.tile-layout。变种只改纹理槽位和采样分派。"
-  (:require
-    [top.kzre.homunculus.backend.shader.dsl :refer :all]))
+  )
 
 ;; ═══════════════════════════════════════════
 ;; 查找表 —— t0-t2
