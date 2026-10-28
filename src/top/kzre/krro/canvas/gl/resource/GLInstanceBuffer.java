@@ -6,16 +6,19 @@ import java.util.List;
 import static org.lwjgl.opengl.GL15.*;
 import static org.lwjgl.opengl.GL20.glEnableVertexAttribArray;
 import static org.lwjgl.opengl.GL20.glVertexAttribPointer;
-import static org.lwjgl.opengl.GL30.*;
 import static org.lwjgl.opengl.GL33.glVertexAttribDivisor;
 
 /**
  * 实例数据缓冲。字节级 VBO——GL 的本质。
  *
  * <p><b>字节级语义</b>：{@code strideBytes} 是每实例的字节数；
- * {@code upload} 接受 {@link ByteBuffer}；{@code bindTo} 时调用方
+ * {@code upload} 接受 {@link ByteBuffer}；{@code bind} 时调用方
  * 逐 attribute 给类型、分量、偏移。混合类型（float + int + 打包
  * 整数）由调用方描述，缓冲不做假设。
+ *
+ * <p><b>VAO 职责</b>：本类<b>不拥有</b> VAO。{@link #bind(List)} 假定
+ * 调用方已绑定目标 VAO，只写 attribute 映射。VAO 是 pass 的职责，
+ * buffer 只负责自己的数据与 attribute 描述。
  *
  * <p><b>不直接面向业务调用方</b>：日常使用走 {@link FloatInstanceBuffer}
  * 等特化视图。本类只服务视图层和需要精确控制字节布局的场景。
@@ -25,7 +28,15 @@ import static org.lwjgl.opengl.GL33.glVertexAttribDivisor;
  * （比如两处代码都在关），静默幂等会掩盖 bug。跟池的 {@code close}
  * 语义一致。
  *
- * <p><b>线程契约</b>：所有方法必须在 GL 线程调用。
+ * <p><b>线程契约</b>：
+ * <ul>
+ *   <li>{@link #create}、{@link #bind}、{@link #upload}、{@link #close}
+ *       内部的 GL 调用必须在 GL 线程执行；</li>
+ *   <li>{@link #isClosed()} 与 {@link #close()} 的状态标记可被任意线程
+ *       读写——{@code closed} 是 {@code volatile}，保证跨线程可见性。
+ *       但 {@code close()} 里的 {@code glDeleteBuffers} 仍会落在调用
+ *       线程上，<b>调用方必须保证它跑在 GL 线程</b>。</li>
+ * </ul>
  */
 public final class GLInstanceBuffer implements AutoCloseable {
 
@@ -115,35 +126,82 @@ public final class GLInstanceBuffer implements AutoCloseable {
     // ═══════════════════════════════════════════════
 
     /**
-     * 按 {@code attrs} 把本 buffer 绑到目标 VAO。
+     * 把本 buffer 的 attribute 配置写入<b>当前已绑定的 VAO</b>。
      *
-     * <p>绑定后 VAO 记住映射——上传新数据不需要重绑。
+     * <p><b>VAO 契约</b>：本方法<b>不绑定/不恢复 VAO</b>——调用方（pass）
+     * 必须在调用前自行 {@code glBindVertexArray(targetVao)}。GL 状态是
+     * 共用的，VAO 是 pass 的职责，buffer 只负责自己的 attribute 映射。
      *
-     * @param vao   目标 VAO
+     * <p>本方法只改 {@code GL_ARRAY_BUFFER} 绑定，结束时解绑到 0。
+     *
+     * <p><b>越界校验</b>：配置前先对全部 attribute 检查
+     * {@code offsetBytes + attributeByteSize(glType, components) <= strideBytes}。
+     * 越界时 {@code glVertexAttribPointer} 不会报错，只会静默读到下一个
+     * 实例的数据；未知 {@code glType} 由 {@link GLUtils#attributeByteSize}
+     * 抛异常。校验在写任何 GL 状态之前完成，失败时 VAO 里不会留下
+     * 半套 attribute。
+     *
+     * <p>绑定后 VAO 记住映射——之后 {@link #upload} 更新数据不需要重绑
+     * attribute，但每次绘制前 pass 仍需自己绑 VAO。
+     *
      * @param attrs attribute 描述列表，不能为空
-     * @throws IllegalStateException 本 buffer 已关闭
+     * @throws IllegalArgumentException attrs 为 null / 空，attribute 越界，
+     *                                  或 {@code glType} 未知
+     * @throws IllegalStateException    本 buffer 已关闭
      */
-    public void bindTo(int vao, List<Attribute> attrs) {
+    public void bind(List<Attribute> attrs) {
         checkAlive();
+        checkAttrs(attrs);
+        validateAttrs(attrs);            // 先全量校验，再动 GL 状态
+
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        try {
+            configureAttrs(attrs);
+        } finally {
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+        }
+    }
+
+    /** 入口校验。 */
+    private static void checkAttrs(List<Attribute> attrs) {
         if (attrs == null || attrs.isEmpty()) {
             throw new IllegalArgumentException("attrs must not be empty");
         }
+    }
 
-        glBindVertexArray(vao);
-        try {
-            glBindBuffer(GL_ARRAY_BUFFER, vbo);
-            try {
-                for (Attribute a : attrs) {
-                    glEnableVertexAttribArray(a.location);
-                    glVertexAttribPointer(a.location, a.components, a.glType,
-                            a.normalized, strideBytes, (long) a.offsetBytes);
-                    glVertexAttribDivisor(a.location, a.divisor);
-                }
-            } finally {
-                glBindBuffer(GL_ARRAY_BUFFER, 0);
+    /**
+     * 校验每个 attribute 的字节范围是否落在 stride 内。
+     *
+     * <p>不调用任何 GL 函数，纯算术；在 {@code glBindBuffer} 之前执行，
+     * 失败时 GL 状态完全未变。
+     */
+    private void validateAttrs(List<Attribute> attrs) {
+        for (Attribute a : attrs) {
+            int size = GLUtils.attributeByteSize(a.glType, a.components);
+            int end  = a.offsetBytes + size;
+            if (end > strideBytes) {
+                throw new IllegalArgumentException(
+                        "attribute " + a.location + " ends at byte " + end
+                                + " but stride is " + strideBytes
+                                + " (offset=" + a.offsetBytes
+                                + ", components=" + a.components
+                                + ", glType=0x" + Integer.toHexString(a.glType)
+                                + ", size=" + size + ")");
             }
-        } finally {
-            glBindVertexArray(0);
+        }
+    }
+
+    /**
+     * 在已绑定的 {@code GL_ARRAY_BUFFER} + 已绑定的 VAO 上配置
+     * 所有 attribute。调用方负责 buffer / VAO 的绑定与解绑，
+     * 并保证已通过 {@link #validateAttrs} 校验。
+     */
+    private void configureAttrs(List<Attribute> attrs) {
+        for (Attribute a : attrs) {
+            glEnableVertexAttribArray(a.location);
+            glVertexAttribPointer(a.location, a.components, a.glType,
+                    a.normalized, strideBytes, a.offsetBytes);
+            glVertexAttribDivisor(a.location, a.divisor);
         }
     }
 
@@ -193,11 +251,15 @@ public final class GLInstanceBuffer implements AutoCloseable {
     // ═══════════════════════════════════════════════
 
     /**
-     * 关闭，释放 VBO。必须在 GL 线程调用。
+     * 关闭，释放 VBO。GL 调用部分必须在 GL 线程执行。
      *
      * <p><b>不可重入</b>——重复调用抛 {@link IllegalStateException}。
      * 这是有意的：静默幂等会掩盖调用方的逻辑错误（比如两处代码都
      * 在关同一个 buffer）。
+     *
+     * <p><b>线程</b>：{@code closed} 是 {@code volatile}，标记本身可被
+     * 任意线程读写；但 {@code glDeleteBuffers} 必须在 GL 线程执行——
+     * 调用方负责把 {@code close()} 调度到 GL 线程。
      *
      * @throws IllegalStateException 已关闭
      */
@@ -217,6 +279,10 @@ public final class GLInstanceBuffer implements AutoCloseable {
     public int  getVbo()               { return vbo; }
     public int  getStrideBytes()       { return strideBytes; }
     public int  getCapacityInstances() { return capacityInstances; }
+
+    /**
+     * 是否已关闭。可被任意线程调用——{@code closed} 是 {@code volatile}。
+     */
     public boolean isClosed()          { return closed; }
 
     private void checkAlive() {

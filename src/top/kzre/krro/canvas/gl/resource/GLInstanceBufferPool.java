@@ -46,7 +46,6 @@ import java.util.List;
  * <h2>VAO 绑定</h2>
  *
  * <p>池不管 attribute 布局——借出后调用方调
- * {@link GLInstanceBuffer#bindTo} 绑到目标 VAO。归还时不改 VAO，
  * 下次借出时调用方会重绑。
  *
  * <h2>线程契约</h2>

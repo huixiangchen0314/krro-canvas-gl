@@ -1,5 +1,7 @@
 package top.kzre.krro.canvas.gl.resource;
 
+import org.lwjgl.system.MemoryUtil;
+
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
@@ -17,11 +19,19 @@ import static org.lwjgl.opengl.GL11.GL_FLOAT;
  * <p><b>与核心的关系</b>：
  * <ul>
  *   <li>stride：{@code strideFloats * Float.BYTES}</li>
- *   <li>attribute 拆分：每 4 float 一个 vec4，从 {@code baseLocation} 起</li>
+ *   <li>attribute 拆分：{@link #bind(int)} 按每 4 float 一个 vec4
+ *       从 {@code baseLocation} 起连续分配 location，尾部不足 4 个
+ *       float 用一个 vecN</li>
  *   <li>upload：FloatBuffer 零拷贝 reinterpret 为 ByteBuffer 后交给核心</li>
  * </ul>
  *
- * <p><b>线程契约</b>：所有方法必须在 GL 线程调用。
+ * <p><b>线程契约</b>：
+ * <ul>
+ *   <li>{@link #create}、{@link #bind(int)}、{@link #upload} 内部的 GL
+ *       调用必须在 GL 线程执行；</li>
+ *   <li>{@link #isClosed()} 可被任意线程读——它透传核心的
+ *       {@code volatile closed}。</li>
+ * </ul>
  */
 public final class FloatInstanceBuffer {
 
@@ -54,18 +64,20 @@ public final class FloatInstanceBuffer {
     }
 
     /**
-     * 包装已有核心。要求字节 stride 是 4 的倍数。
+     * 包装已有核心。要求字节 stride 是 4 的倍数且至少 4。
      *
-     * @throws IllegalArgumentException 字节 stride 不是 4 的倍数
+     * @throws IllegalArgumentException inner 为 null、字节 stride 不是
+     *                                  4 的倍数，或小于 4
      */
     public static FloatInstanceBuffer wrap(GLInstanceBuffer inner) {
         if (inner == null) {
             throw new IllegalArgumentException("inner must not be null");
         }
-        if (inner.getStrideBytes() % Float.BYTES != 0) {
+        if (inner.getStrideBytes() < Float.BYTES
+                || inner.getStrideBytes() % Float.BYTES != 0) {
             throw new IllegalArgumentException(
                     "byte stride " + inner.getStrideBytes()
-                            + " is not a multiple of 4");
+                            + " is not a positive multiple of 4");
         }
         return new FloatInstanceBuffer(inner, inner.getStrideBytes() / Float.BYTES);
     }
@@ -75,29 +87,47 @@ public final class FloatInstanceBuffer {
     // ═══════════════════════════════════════════════
 
     /**
-     * 绑到 VAO——按 vec4 拆分 attribute。
+     * 把本视图的 float attribute 配置写入<b>当前已绑定的 VAO</b>。
      *
-     * <p>{@code strideFloats = 4} → 1 个 location（vec4）；
-     * {@code strideFloats = 8} → 2 个 location（vec4 + vec4）。
-     * {@code strideFloats} 非 4 倍数时，最后一个 attribute 会读越界——
-     * 调用方保证 buffer 尾部填充。
+     * <p><b>拆分规则</b>：从 {@code baseLocation} 起，每 4 个 float 一个
+     * {@code vec4}；尾部不足 4 个 float 用一个 {@code vecN}
+     * （{@code N = 余数}）。每个 attribute 的 {@code divisor = 1}
+     * （逐实例更新）。
      *
-     * @param vao          目标 VAO
-     * @param baseLocation 起始 attribute location
+     * <p><b>VAO 契约</b>：与核心一致——本方法<b>不绑定/不恢复 VAO</b>。
+     * 调用方（pass）必须在调用前自行 {@code glBindVertexArray(targetVao)}。
+     *
+     * <p><b>越界校验</b>：由核心 {@link GLInstanceBuffer#bind(List)} 完成。
+     * 本视图拆分出的 attribute 天然满足
+     * {@code offsetBytes + components * 4 <= strideBytes}。
+     *
+     * @param baseLocation 第一个 attribute 的 location，必须 ≥ 0
+     * @return 本次占用的 location 数，调用方可用它继续分配下一个 buffer
+     *         的 baseLocation
+     * @throws IllegalArgumentException baseLocation &lt; 0
+     * @throws IllegalStateException    核心已关闭
      */
-    public void bindTo(int vao, int baseLocation) {
-        int attrCount = (strideFloats + 3) / 4;
-        List<GLInstanceBuffer.Attribute> attrs = new ArrayList<>(attrCount);
-        for (int i = 0; i < attrCount; i++) {
-            attrs.add(new GLInstanceBuffer.Attribute(
-                    baseLocation + i,
-                    4,
-                    GL_FLOAT,
-                    i * 4 * Float.BYTES,
-                    false,
-                    1));
+    public int bind(int baseLocation) {
+        if (baseLocation < 0) {
+            throw new IllegalArgumentException(
+                    "baseLocation must be >= 0: " + baseLocation);
         }
-        inner.bindTo(vao, attrs);
+
+        List<GLInstanceBuffer.Attribute> attrs = new ArrayList<>();
+        int offsetFloats = 0;
+        int remaining    = strideFloats;
+        int loc          = baseLocation;
+        while (remaining > 0) {
+            int comps = Math.min(remaining, 4);
+            attrs.add(new GLInstanceBuffer.Attribute(
+                    loc, comps, GL_FLOAT,
+                    offsetFloats * Float.BYTES, false, 1));
+            offsetFloats += comps;
+            remaining    -= comps;
+            loc++;
+        }
+        inner.bind(attrs);
+        return loc - baseLocation;
     }
 
     // ═══════════════════════════════════════════════
@@ -108,24 +138,33 @@ public final class FloatInstanceBuffer {
      * 上传实例数据。零拷贝——FloatBuffer 的剩余部分直接视图化为
      * ByteBuffer 交给核心。
      *
+     * <p><b>direct 要求</b>：{@code data} 必须是 direct buffer。堆内
+     * {@code FloatBuffer} 没有稳定的 native 地址，无法零拷贝；若需要
+     * 从堆内数组上传，调用方先用 {@code MemoryUtil.memAllocFloat} 拷贝。
+     *
      * @param data  position 到 limit 之间至少 {@code count * strideFloats} 个 float
      * @param count 实例数
+     * @throws IllegalArgumentException count &lt; 0、data 空间不足，或 data 非 direct
+     * @throws IllegalStateException    核心已关闭
      */
     public void upload(FloatBuffer data, int count) {
+        if (count < 0) {
+            throw new IllegalArgumentException("count must be >= 0: " + count);
+        }
         int floats = count * strideFloats;
         if (data.remaining() < floats) {
             throw new IllegalArgumentException(
                     "data has " + data.remaining() + " floats but need " + floats);
         }
-        if (count == 0) {
-            inner.upload(ByteBuffer.allocate(0), 0);
-            return;
+        if (!data.isDirect()) {
+            throw new IllegalArgumentException(
+                    "data must be a direct FloatBuffer");
         }
 
         FloatBuffer slice = data.slice();
         slice.limit(floats);
-        ByteBuffer bytes = org.lwjgl.system.MemoryUtil.memByteBuffer(
-                org.lwjgl.system.MemoryUtil.memAddress(slice),
+        ByteBuffer bytes = MemoryUtil.memByteBuffer(
+                MemoryUtil.memAddress(slice),
                 floats * Float.BYTES);
         inner.upload(bytes, count);
     }
@@ -152,6 +191,9 @@ public final class FloatInstanceBuffer {
     /** 核心的 VBO 句柄（透传，调试用）。 */
     public int getVbo()               { return inner.getVbo(); }
 
-    /** 核心是否已释放。视图不释放核心，但可查询状态。 */
-    public boolean isClosed()       { return inner.isClosed(); }
+    /**
+     * 核心是否已释放。视图不释放核心，但可查询状态。
+     * 可被任意线程读——透传核心的 {@code volatile closed}。
+     */
+    public boolean isClosed()         { return inner.isClosed(); }
 }

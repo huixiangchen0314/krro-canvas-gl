@@ -5,10 +5,12 @@ import top.kzre.krro.canvas.core.layer.render.UploadableTile;
 
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
+import top.kzre.krro.canvas.gl.resource.GLInstanceBuffer;
 import top.kzre.krro.canvas.gl.resource.GLQuad;
 import top.kzre.krro.canvas.gl.tile.*;
 import top.kzre.krro.util.tile.Tile;
 
+import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.util.*;
@@ -16,12 +18,9 @@ import java.util.concurrent.Callable;
 
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL15.*;
-import static org.lwjgl.opengl.GL20.glEnableVertexAttribArray;
-import static org.lwjgl.opengl.GL20.glVertexAttribPointer;
 import static org.lwjgl.opengl.GL30.*;
 import static org.lwjgl.opengl.GL31.GL_TEXTURE_BUFFER;
 import static org.lwjgl.opengl.GL31.glTexBuffer;
-import static org.lwjgl.opengl.GL33.glVertexAttribDivisor;
 
 /**
  * 合成任务。在 GL 线程上执行一次 {@link CompositeRequest}，返回目标 FBO。
@@ -72,7 +71,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
         long tClearEnd = System.nanoTime();
 
         GLQuad quad = context.getQuad();
-        List<Integer> transientVbos = new ArrayList<>();
+        List<GLInstanceBuffer> transientBuffers = new ArrayList<>();
 
         long tDrawsStart = System.nanoTime();
 
@@ -81,7 +80,6 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                 ShaderDraw draw = draws.get(i);
                 GLFramebuffer target = fboPair[i % 2];
 
-
                 long tPageInNs = 0;
                 long tTableNs = 0;
                 long tInstNs = 0;
@@ -89,10 +87,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
 
                 quad.bind();
                 try {
-
                     Shader shader = draw.getShader();
-
-
 
                     List<ShaderLayerTileRef> tiles = shader.getTiles();
                     // 换入瓦片。内部 GL 调用（glActiveTexture / glBindTexture /
@@ -135,8 +130,8 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                         long p2 = System.nanoTime();
                         tTableNs += p2 - p1;
 
-                        // 4. 上传 instances VBO
-                        transientVbos.add(uploadInstances(group, instLoc, viewport));
+                        // 4. 上传 instances VBO（VAO 已在循环开头 quad.bind() 绑好）
+                        transientBuffers.add(uploadInstances(group, instLoc, viewport));
                         long p3 = System.nanoTime();
                         tInstNs += p3 - p2;
                     }
@@ -147,6 +142,8 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                     try {
                         shader.bind();
                         try {
+                            // 显式重绑——不依赖 upload 阶段遗留的 VAO 状态
+                            quad.bind();
                             quad.drawInstanced(viewport.getViewTileCount());
                         } finally {
                             shader.unbind();
@@ -169,11 +166,10 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                         + " inst=" + ms(tInstNs) + "ms"
                         + " glDraw=" + ms(tDrawNs) + "ms"
                         + " | total=" + ms(tPageInNs + tTableNs + tInstNs + tDrawNs) + "ms");
-
             }
         } finally {
-            for (int vbo : transientVbos) {
-                glDeleteBuffers(vbo);
+            for (GLInstanceBuffer b : transientBuffers) {
+                b.close();
             }
         }
 
@@ -193,7 +189,6 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
     // ═══════════════════════════════════════════════
     // 换页
     // ═══════════════════════════════════════════════
-
 
     /**
      * 确保传入的所有瓦片引用都已换入 GPU。批量路径优先——能整层
@@ -240,9 +235,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                     "cannot free enough slots: need=" + toPageIn.size()
                             + ", available=" + ensured);
         }
-//        System.out.println(
-//                "already on gpu size: " + alreadyOnGpu.size()
-//                        + ",  ensured: " + ensured);
+
         // ── 3. 批量分配 + 批量上传 ──
         List<TileRef> remaining = toPageIn;
         List<TileRef> rest = new ArrayList<>();
@@ -359,41 +352,68 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
         }
     }
 
-    private int uploadInstances(TileBufferGroup group,
-                                int instanceLocation,
-                                ViewTileInfo grid) {
+    // ═══════════════════════════════════════════════
+    // instances VBO
+    // ═══════════════════════════════════════════════
+
+    /**
+     * 上传逐实例数据到新的 {@link GLInstanceBuffer}。
+     *
+     * <p>每个实例四个 {@code float}：{@code [tileX, tileY, offset, count]}，
+     * 共 16 字节。通过 {@link GLInstanceBuffer#bind(java.util.List)} 把
+     * {@code instanceLocation} 绑定为“逐实例更新（divisor = 1）”。
+     *
+     * <p><b>VAO 契约</b>：{@code bind} <b>不绑定/不恢复 VAO</b>——它假定
+     * 调用方已绑定目标 VAO（本方法在 {@code quad.bind()} 之后调用）。
+     * GL 状态是共用的，VAO 是 pass 的职责，buffer 只写自己的 attribute
+     * 映射。绘制前 pass 会再次 {@code quad.bind()}，不依赖本方法遗留状态。
+     *
+     * @return 新建的实例缓冲；生命周期由调用方负责 {@code close()}
+     */
+    private GLInstanceBuffer uploadInstances(TileBufferGroup group,
+                                             int instanceLocation,
+                                             ViewTileInfo grid) {
         int n = grid.getViewTileCount();
         int[] tileXY  = grid.getTileXY();
         int[] offsets = group.getOffsets();
         int[] counts  = group.getCounts();
 
-        FloatBuffer fb = MemoryUtil.memAllocFloat(n * 4);
-        int vbo = 0;
+        int strideBytes = 4 * Float.BYTES;               // 16 字节 / 实例
+        int capacity    = Math.max(n, 1);                // 至少 1，避免 0 容量
+
+        GLInstanceBuffer buffer = GLInstanceBuffer.create(strideBytes, capacity);
+        boolean ok = false;
         try {
-            for (int i = 0; i < n; i++) {
-                fb.put(tileXY[i * 2]);
-                fb.put(tileXY[i * 2 + 1]);
-                fb.put(offsets[i]);
-                fb.put(counts[i]);
+            // ── 组装数据 ──
+            int bytes = n * strideBytes;
+            ByteBuffer bb = MemoryUtil.memAlloc(bytes);
+            try {
+                FloatBuffer fb = bb.asFloatBuffer();
+                for (int i = 0; i < n; i++) {
+                    fb.put(tileXY[i * 2]);
+                    fb.put(tileXY[i * 2 + 1]);
+                    fb.put(offsets[i]);
+                    fb.put(counts[i]);
+                }
+                bb.limit(bytes);
+                buffer.upload(bb, n);
+            } finally {
+                MemoryUtil.memFree(bb);
             }
-            fb.flip();
 
-            vbo = glGenBuffers();
-            glBindBuffer(GL_ARRAY_BUFFER, vbo);
-            glBufferData(GL_ARRAY_BUFFER, fb, GL_DYNAMIC_DRAW);
+            // ── 在当前 VAO 上写 attribute 映射 ──
+            List<GLInstanceBuffer.Attribute> attrs = Collections.singletonList(
+                    new GLInstanceBuffer.Attribute(
+                            instanceLocation, 4, GL_FLOAT, 0, false, 1)
+            );
+            buffer.bind(attrs);     // 假定当前 VAO 已由 pass 绑定
 
-            glEnableVertexAttribArray(instanceLocation);
-            glVertexAttribPointer(instanceLocation, 4, GL_FLOAT, false,
-                    4 * Float.BYTES, 0L);
-            glVertexAttribDivisor(instanceLocation, 1);
-
-            glBindBuffer(GL_ARRAY_BUFFER, 0);
-        } catch (Throwable t) {
-            if (vbo != 0) glDeleteBuffers(vbo);
-            throw t;
+            ok = true;
+            return buffer;
         } finally {
-            MemoryUtil.memFree(fb);
+            if (!ok) {
+                buffer.close();
+            }
         }
-        return vbo;
     }
 }
