@@ -63,7 +63,7 @@ public final class FBOUtils {
             int tileSize) {
 
         GLTexture tex = fbo.getColorAttachment();
-        int layer = fbo.getLayer();
+        int layer = fbo.getColorLayer();
 
         GLTiledTextureLayer view = new GLTiledTextureLayer(
                 tex, tileSize,
@@ -100,7 +100,7 @@ public final class FBOUtils {
 
     public static GLTiledTextureLayer wrapTiledTexture(SerialExecutor glExecutor, GLFramebuffer fbo, int tileSize) {
         GLTexture tex = fbo.getColorAttachment();
-        int layer = fbo.getLayer();
+        int layer = fbo.getColorLayer();
 
         return new GLTiledTextureLayer(
                 tex, tileSize,
