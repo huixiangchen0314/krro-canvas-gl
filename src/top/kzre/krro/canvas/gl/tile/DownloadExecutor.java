@@ -1,4 +1,4 @@
-package top.kzre.krro.canvas.gl.composite;
+package top.kzre.krro.canvas.gl.tile;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -7,6 +7,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
+ * ！！！ 注意，这些专用线程池不能乱用，线程按线性顺序调度
+ * 一旦混合使用，可能产生死锁
+ * <br>
  * 下载路径专用后台执行器。
  *
  * <p><b>职责</b>：承载 FBO / 纹理下载后的全部 CPU 侧处理——
@@ -26,7 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 允许任意线程提交任务。提交的任务本身不得调用 GL——它运行在
  * 下载线程上，不是 GL 线程。
  */
-public final class DownloadExecutor {
+ final class DownloadExecutor {
 
     private static final Object LOCK = new Object();
     private static volatile ExecutorService DOWNLOAD_EXECUTOR;

@@ -169,7 +169,7 @@ public final class GLCompositeViewport implements GLThreadAffine, AutoCloseable 
             throw new IllegalStateException("viewport context already closed");
         }
         closed = true;
-        ExecutorUtils.submitIfThread(flyweight.getGlExecutor(), this::doClose);
+        ExecutorUtils.runOnThread(flyweight.getGlExecutor(), this::doClose);
     }
 
     private void doClose() {

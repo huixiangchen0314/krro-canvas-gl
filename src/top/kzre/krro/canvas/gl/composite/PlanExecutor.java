@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 允许任意线程提交任务。提交的任务本身不得调用 GL——它运行在
  * 规划线程上，不是 GL 线程。
  */
-public final class PlanExecutor {
+final class PlanExecutor {
 
     private static final Object LOCK = new Object();
     private static volatile ExecutorService PLAN_EXECUTOR;

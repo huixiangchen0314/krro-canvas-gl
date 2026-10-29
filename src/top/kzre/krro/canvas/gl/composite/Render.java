@@ -6,7 +6,6 @@ import top.kzre.krro.canvas.gl.util.Tuple4f;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.TiledCanvas;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -76,6 +75,8 @@ public final class Render {
 
         return glAcquireFboPair(fboPool, extraTextures)
                 .thenComposeAsync(
+                        // 总是调度出去更安全，否则就必须排除法，不能是下载线程，不能是GL 线程，
+                        // 这样子更糟糕，因为GL 线程必定1个，但下载线程，以及日后可能拓展的线程并不稳定
                         pair -> {
                             long tAcquire = System.nanoTime();
                             return planAndSubmit(
@@ -126,7 +127,7 @@ public final class Render {
             return CompletableFuture.completedFuture(ctx.newCanvas());
         }
 
-        return ExecutorUtils.submitIfThread(glExecutor, new CompositeTask(request))
+        return ExecutorUtils.runOnThread(glExecutor, new CompositeTask(request))
                 .thenApply(resultFbo -> {
                     GLFramebuffer other = (resultFbo == fboA) ? fboB : fboA;
                     fboPool.release(other);
@@ -136,18 +137,9 @@ public final class Render {
                     long tExec = System.nanoTime();
                     TiledCanvas canvas = FBOUtils.asCanvas(
                             resultFbo, fboPool, glExecutor, tileSize);
-//                    Set<Long> preKeep = new HashSet<>(canvas.getTiles());
-//                    System.out.println("composite task completed:" +
-//                            "\n canvas tile counts:" + preKeep.size());
                     canvas.keepTiles(dirtyTiles);
-//                    Set<Long> postKeep = canvas.getTiles();
-//                    System.out.println("composite task completed(after keepTiles):" +
-//                            "\n canvas tile counts:" + postKeep.size() +
-//                            "\n dirty tiles count: " + dirtyTiles.size());
-//                    if (postKeep.isEmpty()) {
-//                        System.err.println("result canvas tiles should not be empty");
-//                    }
                     assert !canvas.getTiles().isEmpty();
+
                     long tWrap = System.nanoTime();
                     logTimes(tStart, tCollect, tAcquire, tPlan, tExec, tWrap, "ok");
                     return canvas;

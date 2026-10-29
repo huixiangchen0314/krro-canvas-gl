@@ -137,7 +137,7 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
             throw new IllegalStateException("shared resources already closed");
         }
         closed = true;
-        ExecutorUtils.submitIfThread(glExecutor, this::doClose);
+        ExecutorUtils.runOnThread(glExecutor, this::doClose);
     }
 
     private void doClose() {
@@ -206,7 +206,7 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
                 throw new IllegalStateException("atlasPool must not be null");
             }
 
-            return ExecutorUtils.submitIfThread(glExecutor, () ->
+            return ExecutorUtils.runOnThread(glExecutor, () ->
             {
                 GLQuad glQuad = buildQuad();
                 GLProgramCache programs = new GLProgramCache(glExecutor);

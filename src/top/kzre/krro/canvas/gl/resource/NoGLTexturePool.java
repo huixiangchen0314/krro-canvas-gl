@@ -32,6 +32,6 @@ public final class NoGLTexturePool implements GLTexturePool {
     public void release(GLTexture texture) {
         if (texture == null || texture.isReleased()) return;
 
-        ExecutorUtils.submitIfThread(glExecutor, texture::release);
+        ExecutorUtils.runOnThread(glExecutor, texture::release);
     }
 }

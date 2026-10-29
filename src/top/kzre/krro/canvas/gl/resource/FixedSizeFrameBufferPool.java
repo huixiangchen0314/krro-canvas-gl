@@ -246,7 +246,7 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
         if (slotToClose != null) {
             // 归还单个 slot——释放其 FBO
             List<TextureSlot> singleton = Collections.singletonList(slotToClose);
-            ExecutorUtils.submitIfThread(getGlExecutor(), () ->
+            ExecutorUtils.runOnThread(getGlExecutor(), () ->
                     ResourceUtils.closeDelayError(singleton));
         }
 
@@ -322,7 +322,7 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
         if (toRelease.isEmpty()) return;
         Throwable t = null;
         try{
-            ExecutorUtils.submitIfThread(getGlExecutor(), () ->
+            ExecutorUtils.runOnThread(getGlExecutor(), () ->
             {
                 RuntimeException reeaseError = ResourceUtils.closeDelayError(toRelease);
                 if (reeaseError != null) {
@@ -413,7 +413,7 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
 
         SerialExecutor glExecutor = texturePool.getGlExecutor();
 
-        return ExecutorUtils.submitIfThread(glExecutor,
+        return ExecutorUtils.runOnThread(glExecutor,
                 () -> {
                     synchronized (lock) {
                         if (deferredClose != null) return;

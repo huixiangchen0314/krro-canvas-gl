@@ -282,7 +282,7 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
         if (!closed.compareAndSet(false, true)) {
             throw new IllegalStateException("context is already closed");
         }
-        ExecutorUtils.submitIfThread(glExecutor, this::doClose);
+        ExecutorUtils.runOnThread(glExecutor, this::doClose);
     }
 
     /** 实际的清理动作。只在 GL 线程上执行。 */

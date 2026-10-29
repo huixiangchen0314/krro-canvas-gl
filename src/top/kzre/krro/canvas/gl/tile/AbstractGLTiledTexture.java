@@ -2,7 +2,6 @@ package top.kzre.krro.canvas.gl.tile;
 
 import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.DownloadableTile;
-import top.kzre.krro.canvas.gl.composite.DownloadExecutor;
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.resource.PixelCodec;
@@ -287,7 +286,7 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
             int glRow = glRow();
 
             // ── GL 线程：只做 readback ──
-            return ExecutorUtils.submitIfThread(
+            return ExecutorUtils.runOnThread(
                             owner.glExecutor,
                             () -> {
                                 long downloadBegin = System.nanoTime();
