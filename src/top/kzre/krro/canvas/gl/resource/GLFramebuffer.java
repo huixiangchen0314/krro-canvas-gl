@@ -29,7 +29,7 @@ import static org.lwjgl.opengl.GL32.glFramebufferTextureLayer;
  * <h2>线程契约</h2>
  * <b>所有方法必须在 GL 线程（current context）上调用。</b>
  */
-public final class GLFramebuffer implements AutoCloseable{
+public final class GLFramebuffer implements AutoCloseable {
 
     private final int fbo;
     private final GLTexture colorAttachment;
@@ -99,21 +99,21 @@ public final class GLFramebuffer implements AutoCloseable{
     // ═══════════════════════════════════════════════
 
     /**
-     * 绑定为当前渲染目标，同时设置 viewport。
-     */
-    public void bind() {
-        checkAlive();
-        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-        glViewport(0, 0, width, height);
-    }
-
-    /**
      * 解绑，回到默认帧缓冲。静态方法。
      *
      * <p>不恢复 viewport。
      */
     public static void unbind() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    /**
+     * 绑定为当前渲染目标，同时设置 viewport。
+     */
+    public void bind() {
+        checkAlive();
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glViewport(0, 0, width, height);
     }
 
     /**
@@ -147,25 +147,47 @@ public final class GLFramebuffer implements AutoCloseable{
     // 访问器
     // ═══════════════════════════════════════════════
 
-    /** FBO 句柄。 */
-    public int getFbo() { return fbo; }
+    /**
+     * FBO 句柄。
+     */
+    public int getFbo() {
+        return fbo;
+    }
 
     /**
      * 颜色附着纹理。所有权在调用方，不要在外部 release。
      */
-    public GLTexture getColorAttachment() { return colorAttachment; }
+    public GLTexture getColorAttachment() {
+        return colorAttachment;
+    }
 
-    /** 颜色附着的层索引。 */
-    public int getLayer() { return layer; }
+    /**
+     * 颜色附着的层索引。
+     */
+    public int getLayer() {
+        return layer;
+    }
 
-    /** 宽（像素）。 */
-    public int getWidth() { return width; }
+    /**
+     * 宽（像素）。
+     */
+    public int getWidth() {
+        return width;
+    }
 
-    /** 高（像素）。 */
-    public int getHeight() { return height; }
+    /**
+     * 高（像素）。
+     */
+    public int getHeight() {
+        return height;
+    }
 
-    /** 是否已释放。 */
-    public boolean isReleased() { return released; }
+    /**
+     * 是否已释放。
+     */
+    public boolean isReleased() {
+        return released;
+    }
 
     private void checkAlive() {
         if (released) throw new IllegalStateException("GLFramebuffer released");

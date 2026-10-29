@@ -2,8 +2,6 @@ package top.kzre.krro.canvas.gl.composite;
 
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.tile.AbstractGLTiledTexture;
-import top.kzre.krro.canvas.gl.tile.GLAtlas;
-import top.kzre.krro.canvas.gl.tile.TileRef;
 import top.kzre.krro.util.tile.Tile;
 import top.kzre.krro.util.tile.TiledCanvas;
 
@@ -13,7 +11,8 @@ import java.util.List;
 import java.util.Set;
 
 public final class LayerUtils {
-    private LayerUtils() {}
+    private LayerUtils() {
+    }
 
     public static Set<GLTexture> collectTextures(List<ILayer> layers) {
         Set<GLTexture> result = new HashSet<>();

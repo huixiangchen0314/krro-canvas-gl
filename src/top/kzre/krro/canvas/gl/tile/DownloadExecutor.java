@@ -29,12 +29,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 允许任意线程提交任务。提交的任务本身不得调用 GL——它运行在
  * 下载线程上，不是 GL 线程。
  */
- final class DownloadExecutor {
+final class DownloadExecutor {
 
     private static final Object LOCK = new Object();
     private static volatile ExecutorService DOWNLOAD_EXECUTOR;
 
-    private DownloadExecutor() {}
+    private DownloadExecutor() {
+    }
 
     /**
      * 返回下载专用单线程执行器。

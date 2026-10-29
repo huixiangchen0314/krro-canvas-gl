@@ -20,9 +20,9 @@ public final class TileRef {
 
     public TileRef(TiledCanvas canvas, Tile tile) {
         if (canvas == null) throw new IllegalArgumentException("canvas must not be null");
-        if (tile == null)   throw new IllegalArgumentException("tile must not be null");
+        if (tile == null) throw new IllegalArgumentException("tile must not be null");
         this.canvas = canvas;
-        this.tile   = tile;
+        this.tile = tile;
     }
 
     public TiledCanvas getCanvas() {
@@ -33,11 +33,19 @@ public final class TileRef {
         return tile;
     }
 
-    /** 瓦片 x 坐标。转发自 {@link Tile#tx()}。 */
-    public int getTx() { return tile.tx(); }
+    /**
+     * 瓦片 x 坐标。转发自 {@link Tile#tx()}。
+     */
+    public int getTx() {
+        return tile.tx();
+    }
 
-    /** 瓦片 y 坐标。转发自 {@link Tile#ty()}。 */
-    public int getTy() { return tile.ty(); }
+    /**
+     * 瓦片 y 坐标。转发自 {@link Tile#ty()}。
+     */
+    public int getTy() {
+        return tile.ty();
+    }
 
 
     @Override

@@ -25,7 +25,7 @@ public interface Shader {
     /**
      * 获取所有瓦片，用于上传
      */
-    List<ShaderLayerTileRef>  getTiles();
+    List<ShaderLayerTileRef> getTiles();
 
     /**
      * 返回本 shader 依赖的全部 {@link TileBufferGroup}。
@@ -48,9 +48,13 @@ public interface Shader {
     int instanceLocation(int groupIndex);
 
 
-    /** 激活 program，配置 uniform。 */
+    /**
+     * 激活 program，配置 uniform。
+     */
     void bind();
 
-    /** 解绑 program。 */
+    /**
+     * 解绑 program。
+     */
     void unbind();
 }

@@ -19,7 +19,8 @@ package top.kzre.krro.canvas.gl.util;
  */
 public final class ByteUtils {
 
-    private ByteUtils() {}
+    private ByteUtils() {
+    }
 
     /**
      * 饱和转换：float [0,1] → 无符号字节 [0,255]。

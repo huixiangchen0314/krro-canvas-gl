@@ -5,8 +5,8 @@ import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
+import top.kzre.krro.canvas.gl.tile.FBOUtils;
 import top.kzre.krro.canvas.gl.tile.GLAtlas;
-import top.kzre.krro.canvas.gl.tile.GLTile;
 import top.kzre.krro.canvas.gl.util.Tuple4f;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.Tile;
@@ -16,7 +16,8 @@ import java.util.*;
 
 public final class CompositePlanner {
 
-    private CompositePlanner() {}
+    private CompositePlanner() {
+    }
 
     // ═══════════════════════════════════════════════
     // 主流程
@@ -32,9 +33,9 @@ public final class CompositePlanner {
 
         long t0 = System.nanoTime();
 
-        int viewWidth  = context.getViewWidth();
+        int viewWidth = context.getViewWidth();
         int viewHeight = context.getViewHeight();
-        int tileSize   = context.getTileSize();
+        int tileSize = context.getTileSize();
 
         if (viewWidth <= 0 || viewHeight <= 0) {
             throw new IllegalStateException(
@@ -60,7 +61,8 @@ public final class CompositePlanner {
 
         int minSingleDrawnTiles = context.getMinSingleDrawnTiles();
         SerialExecutor glExecutor = context.getGlExecutor();
-        AtlasPoolPage page = context.getAtlasPoolPage();
+        // 冻结 Atlas
+        AtlasPoolPage page = context.getAtlasPool().page();
         int atlasCapacity = page.getCapacity();
         List<Tile> allTiles = LayerUtils.collectTiles(layers);
         page.junk(allTiles);
@@ -188,8 +190,7 @@ public final class CompositePlanner {
             }
             if (tileCount <= ensured) {
                 tileSets.add(tileSet);
-            }
-            else if (ensured < needTiles) {
+            } else if (ensured < needTiles) {
                 // 如果剔除到单批后，确保的瓦片还是太少
                 // 就不管是否上传，按确保的瓦片数直接划分
                 int availableSlotCount = ensured;
@@ -209,7 +210,7 @@ public final class CompositePlanner {
                 ArrayList<ShaderLayerTileRef> tileRefs = new ArrayList<>(availableSlotCount);
                 int preBatch = 0;
                 for (int idx = 0; idx < tileCount; idx++) {
-                    int batch = idx / availableSlotCount ;
+                    int batch = idx / availableSlotCount;
                     if (batch > preBatch) {
                         preBatch = batch;
                         tileSets.add(tileSet.withRefs(tileRefs));
@@ -218,8 +219,7 @@ public final class CompositePlanner {
                     tileRefs.add(tiles.get(idx));
                 }
                 tileSets.add(tileSet.withRefs(tileRefs));
-            }
-            else {
+            } else {
                 ArrayList<ShaderLayerTileRef> tileRefs = new ArrayList<>(ensured);
                 int preBatch = 0;
                 int uploaded = 0;
@@ -245,11 +245,11 @@ public final class CompositePlanner {
             for (ShaderLayerTileSet tilesToDraw : tileSets) {
                 GLBindable[] resolvedBundables;
                 ShaderFactoryContext factoryContext;
-                if (tilesToDraw.getLayerTileRefs().size() > atlasCapacity){
+                if (tilesToDraw.getLayerTileRefs().size() > atlasCapacity) {
                     throw new IllegalStateException(
                             "tile refs out of bounds"
-                    + "\n size: " + tilesToDraw.getLayerTileRefs().size()
-                    + "\n ensured: " + ensured);
+                                    + "\n size: " + tilesToDraw.getLayerTileRefs().size()
+                                    + "\n ensured: " + ensured);
                 }
                 if (draws.isEmpty()) {
                     resolvedBundables = bindables;

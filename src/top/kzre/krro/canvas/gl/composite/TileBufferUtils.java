@@ -30,7 +30,8 @@ import java.util.Map;
  */
 public final class TileBufferUtils {
 
-    private TileBufferUtils() {}
+    private TileBufferUtils() {
+    }
 
     /**
      * 打包瓦片缓冲。
@@ -88,7 +89,7 @@ public final class TileBufferUtils {
             GLTileDescriptor descriptor = descriptors.get(i);
 
             int unit = descriptor.getUnit();
-            if (unit < 0){
+            if (unit < 0) {
                 throw new IllegalStateException(
                         "descriptor unit not assigned; ensure bindables are bound before packBuffers");
             }
@@ -112,19 +113,19 @@ public final class TileBufferUtils {
 
             if (i < 3) {
                 System.out.println("[tileTable " + i + "]"
-                        + " u0=" + tileTable[i*8]
-                        + " v0=" + tileTable[i*8+1]
-                        + " unit=" + tileTable[i*8+2]
-                        + " texLayer=" + tileTable[i*8+3]
-                        + " originX=" + tileTable[i*8+4]
-                        + " originY=" + tileTable[i*8+5]);
+                        + " u0=" + tileTable[i * 8]
+                        + " v0=" + tileTable[i * 8 + 1]
+                        + " unit=" + tileTable[i * 8 + 2]
+                        + " texLayer=" + tileTable[i * 8 + 3]
+                        + " originX=" + tileTable[i * 8 + 4]
+                        + " originY=" + tileTable[i * 8 + 5]);
             }
         }
 
         // ── 屏幕瓦片 → indexList ──
         int[] gridTileXY = viewInfo.getTileXY();
         int[] offsets = new int[screenTileCount];
-        int[] counts  = new int[screenTileCount];
+        int[] counts = new int[screenTileCount];
 
         int tileCount = 0;
         for (int i = 0; i < screenTileCount; i++) {

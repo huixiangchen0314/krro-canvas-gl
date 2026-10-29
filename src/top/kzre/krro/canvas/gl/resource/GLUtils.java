@@ -1,13 +1,6 @@
 package top.kzre.krro.canvas.gl.resource;
 
-import static org.lwjgl.opengl.GL11.GL_BYTE;
-import static org.lwjgl.opengl.GL11.GL_DOUBLE;
-import static org.lwjgl.opengl.GL11.GL_FLOAT;
-import static org.lwjgl.opengl.GL11.GL_INT;
-import static org.lwjgl.opengl.GL11.GL_SHORT;
-import static org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE;
-import static org.lwjgl.opengl.GL11.GL_UNSIGNED_INT;
-import static org.lwjgl.opengl.GL11.GL_UNSIGNED_SHORT;
+import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL30.GL_HALF_FLOAT;
 import static org.lwjgl.opengl.GL30.GL_UNSIGNED_INT_10F_11F_11F_REV;
 import static org.lwjgl.opengl.GL33.GL_INT_2_10_10_10_REV;
@@ -23,7 +16,8 @@ import static org.lwjgl.opengl.GL33.GL_UNSIGNED_INT_2_10_10_10_REV;
  */
 public final class GLUtils {
 
-    private GLUtils() {}
+    private GLUtils() {
+    }
 
     /**
      * 计算一个顶点 attribute 占用的字节数。

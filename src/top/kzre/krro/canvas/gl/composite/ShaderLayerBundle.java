@@ -28,7 +28,7 @@ import java.util.List;
  */
 public final class ShaderLayerBundle {
 
-    private final String       shaderKey;
+    private final String shaderKey;
     private final List<ILayer> layers;
 
     /**
@@ -43,7 +43,9 @@ public final class ShaderLayerBundle {
         this.layers = layers;
     }
 
-    /** shader 标识。 */
+    /**
+     * shader 标识。
+     */
     public String getShaderKey() {
         return shaderKey;
     }

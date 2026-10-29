@@ -144,6 +144,62 @@ public final class GLProgram {
     // ═══════════════════════════════════════════════
 
     /**
+     * 解绑当前 program，回到「无 program」状态。
+     *
+     * <p>对应 {@code glUseProgram(0)}。静态方法——不依赖任何
+     * 实例，因为 GL 的 current program 是全局状态。
+     */
+    public static void unuse() {
+        glUseProgram(0);
+    }
+
+    /**
+     * 校验 2D 仿射矩阵并补齐为列主序 mat3。
+     */
+    private static float[] toMat3(float[] mat2d) {
+        if (mat2d == null || mat2d.length < 6) {
+            throw new IllegalArgumentException(
+                    "mat2d must have at least 6 elements, got "
+                            + (mat2d == null ? "null" : mat2d.length));
+        }
+        return new float[]{
+                mat2d[0], mat2d[1], 0,
+                mat2d[2], mat2d[3], 0,
+                mat2d[4], mat2d[5], 1
+        };
+    }
+
+    // ═══════════════════════════════════════════════
+    // Uniform 查询
+    // ═══════════════════════════════════════════════
+
+    /**
+     * 校验 4×4 矩阵长度。
+     */
+    private static void requireMat4(float[] m16) {
+        if (m16 == null || m16.length < 16) {
+            throw new IllegalArgumentException(
+                    "m16 must have at least 16 elements, got "
+                            + (m16 == null ? "null" : m16.length));
+        }
+    }
+
+    /**
+     * 校验扁平化 vec2 数组：非 null 且长度为偶数。
+     */
+    private static void requireVec2Array(float[] arr) {
+        if (arr == null || (arr.length & 1) != 0) {
+            throw new IllegalArgumentException(
+                    "vec2 array must have even length, got "
+                            + (arr == null ? "null" : arr.length));
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    // Uniform 上传（不存在即抛）
+    // ═══════════════════════════════════════════════
+
+    /**
      * 将本 program 设为当前 program。
      *
      * <p>对应 {@code glUseProgram(handle)}。之后的 uniform 设置
@@ -156,20 +212,6 @@ public final class GLProgram {
         checkAlive();
         glUseProgram(handle);
     }
-
-    /**
-     * 解绑当前 program，回到「无 program」状态。
-     *
-     * <p>对应 {@code glUseProgram(0)}。静态方法——不依赖任何
-     * 实例，因为 GL 的 current program 是全局状态。
-     */
-    public static void unuse() {
-        glUseProgram(0);
-    }
-
-    // ═══════════════════════════════════════════════
-    // Uniform 查询
-    // ═══════════════════════════════════════════════
 
     /**
      * 查询 uniform location，结果缓存在内部 map 中。
@@ -208,34 +250,44 @@ public final class GLProgram {
         return loc;
     }
 
-    // ═══════════════════════════════════════════════
-    // Uniform 上传（不存在即抛）
-    // ═══════════════════════════════════════════════
-
-    /** 上传 int uniform（用于 sampler 单元、标志位等）。 */
+    /**
+     * 上传 int uniform（用于 sampler 单元、标志位等）。
+     */
     public void setInt(String name, int v) {
         glUniform1i(checkedLoc(name), v);
     }
 
-    /** 上传 float uniform。 */
+    /**
+     * 上传 float uniform。
+     */
     public void setFloat(String name, float v) {
         glUniform1f(checkedLoc(name), v);
     }
 
-    /** 上传 vec2 uniform。 */
+    /**
+     * 上传 vec2 uniform。
+     */
     public void setVec2(String name, float x, float y) {
         glUniform2f(checkedLoc(name), x, y);
     }
 
-    /** 上传 vec3 uniform。 */
+    /**
+     * 上传 vec3 uniform。
+     */
     public void setVec3(String name, float x, float y, float z) {
         glUniform3f(checkedLoc(name), x, y, z);
     }
 
-    /** 上传 vec4 uniform。 */
+    /**
+     * 上传 vec4 uniform。
+     */
     public void setVec4(String name, float x, float y, float z, float w) {
         glUniform4f(checkedLoc(name), x, y, z, w);
     }
+
+    // ═══════════════════════════════════════════════
+    // Uniform 上传（不存在时静默跳过）
+    // ═══════════════════════════════════════════════
 
     /**
      * 上传 2D 仿射矩阵（6 元素 {@code [a b c d e f]}）。
@@ -284,64 +336,80 @@ public final class GLProgram {
         glUniform2fv(checkedLoc(name), arr);
     }
 
-    // ═══════════════════════════════════════════════
-    // Uniform 上传（不存在时静默跳过）
-    // ═══════════════════════════════════════════════
-
-    /** 上传 int uniform——不存在时静默跳过。 */
+    /**
+     * 上传 int uniform——不存在时静默跳过。
+     */
     public void setIntIfPresent(String name, int v) {
         int loc = checkedLocOptional(name);
         if (loc >= 0) glUniform1i(loc, v);
     }
 
-    /** 上传 float uniform——不存在时静默跳过。 */
+    /**
+     * 上传 float uniform——不存在时静默跳过。
+     */
     public void setFloatIfPresent(String name, float v) {
         int loc = checkedLocOptional(name);
         if (loc >= 0) glUniform1f(loc, v);
     }
 
-    /** 上传 vec2 uniform——不存在时静默跳过。 */
+    /**
+     * 上传 vec2 uniform——不存在时静默跳过。
+     */
     public void setVec2IfPresent(String name, float x, float y) {
         int loc = checkedLocOptional(name);
         if (loc >= 0) glUniform2f(loc, x, y);
     }
 
-    /** 上传 vec3 uniform——不存在时静默跳过。 */
+    /**
+     * 上传 vec3 uniform——不存在时静默跳过。
+     */
     public void setVec3IfPresent(String name, float x, float y, float z) {
         int loc = checkedLocOptional(name);
         if (loc >= 0) glUniform3f(loc, x, y, z);
     }
 
-    /** 上传 vec4 uniform——不存在时静默跳过。 */
+    /**
+     * 上传 vec4 uniform——不存在时静默跳过。
+     */
     public void setVec4IfPresent(String name, float x, float y, float z, float w) {
         int loc = checkedLocOptional(name);
         if (loc >= 0) glUniform4f(loc, x, y, z, w);
     }
 
-    /** 上传 vec2 数组 uniform——不存在时静默跳过。 */
+    // ═══════════════════════════════════════════════
+    // 释放
+    // ═══════════════════════════════════════════════
+
+    /**
+     * 上传 vec2 数组 uniform——不存在时静默跳过。
+     */
     public void setVec2ArrayIfPresent(String name, float[] arr) {
         requireVec2Array(arr);
         int loc = checkedLocOptional(name);
         if (loc >= 0) glUniform2fv(loc, arr);
     }
 
-    /** 上传 2D 仿射矩阵——不存在时静默跳过。 */
+    // ═══════════════════════════════════════════════
+    // 内部辅助
+    // ═══════════════════════════════════════════════
+
+    /**
+     * 上传 2D 仿射矩阵——不存在时静默跳过。
+     */
     public void setMat2DIfPresent(String name, float[] mat2d) {
         float[] mat3f = toMat3(mat2d);
         int loc = checkedLocOptional(name);
         if (loc >= 0) glUniformMatrix3fv(loc, false, mat3f);
     }
 
-    /** 上传 4×4 矩阵——不存在时静默跳过。 */
+    /**
+     * 上传 4×4 矩阵——不存在时静默跳过。
+     */
     public void setMat4IfPresent(String name, float[] m16) {
         requireMat4(m16);
         int loc = checkedLocOptional(name);
         if (loc >= 0) glUniformMatrix4fv(loc, false, m16);
     }
-
-    // ═══════════════════════════════════════════════
-    // 释放
-    // ═══════════════════════════════════════════════
 
     /**
      * 释放 program object。必须在 GL 线程上调用。幂等。
@@ -354,64 +422,36 @@ public final class GLProgram {
         released = true;
     }
 
-    // ═══════════════════════════════════════════════
-    // 内部辅助
-    // ═══════════════════════════════════════════════
-
-    /** 已释放检查 + 必存在的 location。 */
+    /**
+     * 已释放检查 + 必存在的 location。
+     */
     private int checkedLoc(String name) {
         checkAlive();
         return uniformLocation(name);
     }
 
-    /** 已释放检查 + 可选的 location（找不到为 -1）。 */
+    /**
+     * 已释放检查 + 可选的 location（找不到为 -1）。
+     */
     private int checkedLocOptional(String name) {
         checkAlive();
         return uniformLocationOptional(name);
-    }
-
-    /** 校验 2D 仿射矩阵并补齐为列主序 mat3。 */
-    private static float[] toMat3(float[] mat2d) {
-        if (mat2d == null || mat2d.length < 6) {
-            throw new IllegalArgumentException(
-                    "mat2d must have at least 6 elements, got "
-                            + (mat2d == null ? "null" : mat2d.length));
-        }
-        return new float[]{
-                mat2d[0], mat2d[1], 0,
-                mat2d[2], mat2d[3], 0,
-                mat2d[4], mat2d[5], 1
-        };
-    }
-
-    /** 校验 4×4 矩阵长度。 */
-    private static void requireMat4(float[] m16) {
-        if (m16 == null || m16.length < 16) {
-            throw new IllegalArgumentException(
-                    "m16 must have at least 16 elements, got "
-                            + (m16 == null ? "null" : m16.length));
-        }
-    }
-
-    /** 校验扁平化 vec2 数组：非 null 且长度为偶数。 */
-    private static void requireVec2Array(float[] arr) {
-        if (arr == null || (arr.length & 1) != 0) {
-            throw new IllegalArgumentException(
-                    "vec2 array must have even length, got "
-                            + (arr == null ? "null" : arr.length));
-        }
     }
 
     // ═══════════════════════════════════════════════
     // 访问器
     // ═══════════════════════════════════════════════
 
-    /** GL program object 句柄。 */
+    /**
+     * GL program object 句柄。
+     */
     public int getHandle() {
         return handle;
     }
 
-    /** 是否已释放。 */
+    /**
+     * 是否已释放。
+     */
     public boolean isReleased() {
         return released;
     }

@@ -39,7 +39,8 @@ final class PlanExecutor {
     private static final Object LOCK = new Object();
     private static volatile ExecutorService PLAN_EXECUTOR;
 
-    private PlanExecutor() {}
+    private PlanExecutor() {
+    }
 
     /**
      * 返回规划专用单线程执行器。

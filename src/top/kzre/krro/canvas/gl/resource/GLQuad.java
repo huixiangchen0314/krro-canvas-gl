@@ -42,54 +42,17 @@ import static org.lwjgl.opengl.GL31.glDrawArraysInstanced;
  * <h2>线程契约</h2>
  * <b>所有方法必须在 GL 线程（current context）上调用。</b>
  */
-public final class GLQuad implements AutoCloseable{
-
-    /**
-     * aPos.y 的方向约定。
-     *
-     * <p>顶点在几何上覆盖相同的屏幕矩形——两种方向只在
-     * <b>aPos 值到屏幕位置的映射</b>上有差异。方向的选择决定
-     * shader 里是否需要额外的 y 翻转。
-     */
-    public enum Orientation {
-
-        /**
-         * aPos.y 向上增长。{@code (0,0)} 是左下角——GL 传统约定。
-         *
-         * <p>顶点数据：{@code (0,1) (1,1) (0,0) (1,0)}。几何位置仍是
-         * 屏幕四角，但 aPos.y=0 对应屏幕底、aPos.y=1 对应屏幕顶。
-         *
-         * <p>shader 里需要 {@code world = (aInstance.xy + vec2(aPos.x, 1-aPos.y)) * uTileSize}
-         * 才能得到屏幕方向正确的像素坐标。
-         */
-        Y_UP,
-
-        /**
-         * aPos.y 向下增长。{@code (0,0)} 是左上——屏幕约定。
-         *
-         * <p>顶点数据：{@code (0,0) (1,0) (0,1) (1,1)}。aPos.y=0 对应
-         * 屏幕顶、aPos.y=1 对应屏幕底——与 vPixel / 屏幕像素方向一致。
-         *
-         * <p>shader 里直接 {@code world = (aInstance.xy + aPos) * uTileSize}，
-         * 无翻转。
-         */
-        Y_DOWN
-    }
+public final class GLQuad implements AutoCloseable {
 
     private final int vao;
     private final int vbo;
     private final Orientation orientation;
     private boolean released = false;
-
     private GLQuad(int vao, int vbo, Orientation orientation) {
-        this.vao         = vao;
-        this.vbo         = vbo;
+        this.vao = vao;
+        this.vbo = vbo;
         this.orientation = orientation;
     }
-
-    // ═══════════════════════════════════════════════
-    // 工厂
-    // ═══════════════════════════════════════════════
 
     /**
      * 创建 GL 传统方向的 quad（{@link Orientation#Y_UP}）。
@@ -100,6 +63,10 @@ public final class GLQuad implements AutoCloseable{
     public static GLQuad create() {
         return create(Orientation.Y_UP);
     }
+
+    // ═══════════════════════════════════════════════
+    // 工厂
+    // ═══════════════════════════════════════════════
 
     /**
      * 创建指定方向的 quad。
@@ -158,6 +125,13 @@ public final class GLQuad implements AutoCloseable{
         return new GLQuad(vao, vbo, orientation);
     }
 
+    /**
+     * 解绑当前 VAO。静态方法——GL 的绑定是全局状态。
+     */
+    public static void unbind() {
+        glBindVertexArray(0);
+    }
+
     // ═══════════════════════════════════════════════
     // Attribute 配置（由使用方调用）
     // ═══════════════════════════════════════════════
@@ -204,11 +178,6 @@ public final class GLQuad implements AutoCloseable{
         glBindVertexArray(vao);
     }
 
-    /** 解绑当前 VAO。静态方法——GL 的绑定是全局状态。 */
-    public static void unbind() {
-        glBindVertexArray(0);
-    }
-
     /**
      * 实例化绘制。
      *
@@ -219,11 +188,9 @@ public final class GLQuad implements AutoCloseable{
         glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, instanceCount);
     }
 
-    // ═══════════════════════════════════════════════
-    // 释放
-    // ═══════════════════════════════════════════════
-
-    /** 释放 VAO 和 VBO。必须在 GL 线程上调用。幂等。 */
+    /**
+     * 释放 VAO 和 VBO。必须在 GL 线程上调用。幂等。
+     */
     public void close() {
         if (released) return;
         glDeleteBuffers(vbo);
@@ -232,25 +199,75 @@ public final class GLQuad implements AutoCloseable{
     }
 
     // ═══════════════════════════════════════════════
+    // 释放
+    // ═══════════════════════════════════════════════
+
+    /**
+     * VAO 句柄。
+     */
+    public int getVao() {
+        return vao;
+    }
+
+    // ═══════════════════════════════════════════════
     // 访问器
     // ═══════════════════════════════════════════════
 
-    /** VAO 句柄。 */
-    public int getVao() { return vao; }
-
-    /** VBO 句柄。 */
-    public int getVbo() { return vbo; }
+    /**
+     * VBO 句柄。
+     */
+    public int getVbo() {
+        return vbo;
+    }
 
     /**
      * 本 quad 的 aPos 方向语义。shader 侧据此决定 {@code vPixel} /
      * {@code localUv} 是否需要 y 翻转。
      */
-    public Orientation getOrientation() { return orientation; }
+    public Orientation getOrientation() {
+        return orientation;
+    }
 
-    /** 是否已释放。 */
-    public boolean isReleased() { return released; }
+    /**
+     * 是否已释放。
+     */
+    public boolean isReleased() {
+        return released;
+    }
 
     private void checkAlive() {
         if (released) throw new IllegalStateException("GLQuad released");
+    }
+
+    /**
+     * aPos.y 的方向约定。
+     *
+     * <p>顶点在几何上覆盖相同的屏幕矩形——两种方向只在
+     * <b>aPos 值到屏幕位置的映射</b>上有差异。方向的选择决定
+     * shader 里是否需要额外的 y 翻转。
+     */
+    public enum Orientation {
+
+        /**
+         * aPos.y 向上增长。{@code (0,0)} 是左下角——GL 传统约定。
+         *
+         * <p>顶点数据：{@code (0,1) (1,1) (0,0) (1,0)}。几何位置仍是
+         * 屏幕四角，但 aPos.y=0 对应屏幕底、aPos.y=1 对应屏幕顶。
+         *
+         * <p>shader 里需要 {@code world = (aInstance.xy + vec2(aPos.x, 1-aPos.y)) * uTileSize}
+         * 才能得到屏幕方向正确的像素坐标。
+         */
+        Y_UP,
+
+        /**
+         * aPos.y 向下增长。{@code (0,0)} 是左上——屏幕约定。
+         *
+         * <p>顶点数据：{@code (0,0) (1,0) (0,1) (1,1)}。aPos.y=0 对应
+         * 屏幕顶、aPos.y=1 对应屏幕底——与 vPixel / 屏幕像素方向一致。
+         *
+         * <p>shader 里直接 {@code world = (aInstance.xy + aPos) * uTileSize}，
+         * 无翻转。
+         */
+        Y_DOWN
     }
 }

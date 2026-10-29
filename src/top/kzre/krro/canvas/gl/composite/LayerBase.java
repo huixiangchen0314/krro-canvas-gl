@@ -3,13 +3,13 @@ package top.kzre.krro.canvas.gl.composite;
 import top.kzre.colorutils.blend.Blends;
 import top.kzre.krro.util.tile.TiledCanvas;
 
-public abstract class LayerBase implements ILayer{
-    private final Object      id;
+public abstract class LayerBase implements ILayer {
+    private final Object id;
     private final TiledCanvas canvas;
-    private final float[]     transform;
-    private final boolean     visible;
-    private final float       opacity;
-    private final String      blendMode;
+    private final float[] transform;
+    private final boolean visible;
+    private final float opacity;
+    private final String blendMode;
 
     /**
      * @param id        图层标识，null 允许（不参与合成逻辑）
@@ -37,11 +37,11 @@ public abstract class LayerBase implements ILayer{
                     "opacity must be in [0, 1]: " + opacity);
         }
 
-        this.id        = id;
-        this.canvas    = canvas;
+        this.id = id;
+        this.canvas = canvas;
         this.transform = transform.clone();
-        this.visible   = visible;
-        this.opacity   = opacity;
+        this.visible = visible;
+        this.opacity = opacity;
         this.blendMode = blendMode;
     }
 
@@ -49,12 +49,35 @@ public abstract class LayerBase implements ILayer{
     // ILayer
     // ═══════════════════════════════════════════════
 
-    @Override public Object      getId()        { return id; }
-    @Override public TiledCanvas getCanvas()    { return canvas; }
-    @Override public float[]     getTransform() { return transform; }
-    @Override public boolean     isVisible()    { return visible; }
-    @Override public float       getOpacity()   { return opacity; }
-    @Override public String      getBlendMode() { return blendMode; }
+    @Override
+    public Object getId() {
+        return id;
+    }
+
+    @Override
+    public TiledCanvas getCanvas() {
+        return canvas;
+    }
+
+    @Override
+    public float[] getTransform() {
+        return transform;
+    }
+
+    @Override
+    public boolean isVisible() {
+        return visible;
+    }
+
+    @Override
+    public float getOpacity() {
+        return opacity;
+    }
+
+    @Override
+    public String getBlendMode() {
+        return blendMode;
+    }
 
     // ═══════════════════════════════════════════════
     // Object

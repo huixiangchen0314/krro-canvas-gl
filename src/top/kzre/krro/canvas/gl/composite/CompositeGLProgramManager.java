@@ -33,7 +33,9 @@ public final class CompositeGLProgramManager implements AutoCloseable {
         regSimpleNormal();
     }
 
-    /** 返回本实例持有的 program 缓存。 */
+    /**
+     * 返回本实例持有的 program 缓存。
+     */
     public GLProgramCache getCache() {
         return cache;
     }
@@ -57,7 +59,7 @@ public final class CompositeGLProgramManager implements AutoCloseable {
                 () -> GLProgram.create(vert, frag));
     }
 
-    public void warmup(){
+    public void warmup() {
         getCache().get(Blends.NORMAL);
     }
 
@@ -80,7 +82,9 @@ public final class CompositeGLProgramManager implements AutoCloseable {
         closed = true;
     }
 
-    /** 是否已关闭。 */
+    /**
+     * 是否已关闭。
+     */
     public boolean isClosed() {
         return closed;
     }

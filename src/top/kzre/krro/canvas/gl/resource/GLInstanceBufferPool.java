@@ -200,18 +200,40 @@ public final class GLInstanceBufferPool implements AutoCloseable {
     // 访问器
     // ═══════════════════════════════════════════════
 
-    /** 每实例字节数。 */
-    public int getStrideBytes()         { return strideBytes; }
+    /**
+     * 每实例字节数。
+     */
+    public int getStrideBytes() {
+        return strideBytes;
+    }
 
-    /** 每 buffer 的实例容量。 */
-    public int getInstancesPerBuffer()  { return instancesPerBuffer; }
+    /**
+     * 每 buffer 的实例容量。
+     */
+    public int getInstancesPerBuffer() {
+        return instancesPerBuffer;
+    }
 
-    /** 空闲缓存上限。 */
-    public int getIdleCapacity()        { return idleCapacity; }
+    /**
+     * 空闲缓存上限。
+     */
+    public int getIdleCapacity() {
+        return idleCapacity;
+    }
 
-    /** 当前空闲 buffer 数。 */
-    public int getIdleCount()           { synchronized (lock) { return idle.size(); } }
+    /**
+     * 当前空闲 buffer 数。
+     */
+    public int getIdleCount() {
+        synchronized (lock) {
+            return idle.size();
+        }
+    }
 
-    /** 是否已关闭。 */
-    public boolean isClosed()           { return closed; }
+    /**
+     * 是否已关闭。
+     */
+    public boolean isClosed() {
+        return closed;
+    }
 }

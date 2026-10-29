@@ -9,7 +9,9 @@ import top.kzre.krro.canvas.gl.resource.PixelFormat;
 import top.kzre.krro.canvas.gl.util.BufferUtils;
 import top.kzre.krro.canvas.gl.util.ExecutorUtils;
 import top.kzre.krro.core.util.SerialExecutor;
-import top.kzre.krro.util.tile.*;
+import top.kzre.krro.util.tile.AbstractTileData;
+import top.kzre.krro.util.tile.TileData;
+import top.kzre.krro.util.tile.TiledCanvas;
 
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
@@ -41,17 +43,23 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public abstract class AbstractGLTiledTexture implements GLBindable {
 
-    protected final GLTexture       texture;
-    protected final TiledCanvas     canvas;
-    protected final SerialExecutor  glExecutor;
+    protected final GLTexture texture;
+    protected final TiledCanvas canvas;
+    protected final SerialExecutor glExecutor;
 
-    /** 纹理布局——构造时确定，不可变。 */
+    /**
+     * 纹理布局——构造时确定，不可变。
+     */
     private final GLTiledTextureLayout layout;
 
-    /** 活跃视图计数。归零时触发 onAllViewsReleased。 */
+    /**
+     * 活跃视图计数。归零时触发 onAllViewsReleased。
+     */
     private final AtomicInteger activeTiles = new AtomicInteger(0);
 
-    /** 是否已释放（视图计数归零后自动置位）。 */
+    /**
+     * 是否已释放（视图计数归零后自动置位）。
+     */
     protected volatile boolean released = false;
 
     protected AbstractGLTiledTexture(GLTexture texture, int tileSize,
@@ -69,10 +77,10 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
         int channels = PixelCodec.channels(texture.getPixelFormat());
         float[] defaultPixel = new float[channels];   // 全零
 
-        this.texture    = texture;
+        this.texture = texture;
         this.glExecutor = glExecutor;
-        this.canvas     = new TiledCanvas(tileSize, defaultPixel);
-        this.layout     = GLTiledTextureLayout.fromPixelSize(
+        this.canvas = new TiledCanvas(tileSize, defaultPixel);
+        this.layout = GLTiledTextureLayout.fromPixelSize(
                 texture.getLayers(),
                 tileSize,
                 texture.getWidth(),
@@ -86,7 +94,7 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
      * @param layerCount  层数
      */
     protected final void populateCanvas(int layerOffset, int layerCount) {
-        int tilesPerRow    = layout.getTilesPerRow();
+        int tilesPerRow = layout.getTilesPerRow();
         int tilesPerColumn = layout.getTilesPerColumn();
 
         // TODO FIX 宽度编码。
@@ -116,10 +124,16 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
      * <p>清空 canvas 会让所有视图引用归零，触发
      * {@link #onAllViewsReleased()}。
      */
-    public TiledCanvas asCanvas() { return canvas; }
+    public TiledCanvas asCanvas() {
+        return canvas;
+    }
 
-    /** 纹理布局。 */
-    public GLTiledTextureLayout getLayout() { return layout; }
+    /**
+     * 纹理布局。
+     */
+    public GLTiledTextureLayout getLayout() {
+        return layout;
+    }
 
     @Override
     public void bind(int unit) {
@@ -132,18 +146,31 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
         this.texture.bind(unit);
     }
 
-    /** 当前纹理单元。-1 表示尚未绑定。 */
-    public int getUnit() { return texture.getUnit(); }
+    /**
+     * 当前纹理单元。-1 表示尚未绑定。
+     */
+    public int getUnit() {
+        return texture.getUnit();
+    }
 
-    /** 是否已释放（视图计数归零后自动置位）。 */
-    public boolean isReleased() { return released; }
+    /**
+     * 是否已释放（视图计数归零后自动置位）。
+     */
+    public boolean isReleased() {
+        return released;
+    }
 
     // ═══════════════════════════════════════════════
     // 内部——供 GLTextureTileDataImpl 访问
     // ═══════════════════════════════════════════════
 
-    GLTexture texture() { return texture; }
-    int tileSize()      { return canvas.getTileSize(); }
+    GLTexture texture() {
+        return texture;
+    }
+
+    int tileSize() {
+        return canvas.getTileSize();
+    }
 
     /**
      * 视图引用归零时调用——递减计数。计数归零时触发
@@ -171,12 +198,18 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
     // 视图类型
     // ═══════════════════════════════════════════════
 
-    /** 能查询 owner 的能力接口。 */
+    /**
+     * 能查询 owner 的能力接口。
+     */
     public interface GLTextureTileData {
         AbstractGLTiledTexture getOwner();
+
         GLTexture getTexture();
+
         int getLayer();
+
         int getRow();
+
         int getColumn();
     }
 
@@ -212,7 +245,9 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
         }
 
         @Override
-        public AbstractGLTiledTexture getOwner() { return owner; }
+        public AbstractGLTiledTexture getOwner() {
+            return owner;
+        }
 
         @Override
         public GLTexture getTexture() {
@@ -242,7 +277,7 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
                         "unit not assigned; call bind(n) first");
             }
             GLTiledTextureLayout layout = owner.getLayout();
-            int tilesPerRow    = layout.getTilesPerRow();
+            int tilesPerRow = layout.getTilesPerRow();
             int tilesPerColumn = layout.getTilesPerColumn();
 
             // canvasRow 是 canvas 网格行（y 向下）；
@@ -353,8 +388,19 @@ public abstract class AbstractGLTiledTexture implements GLBindable {
             return ts * ts * fmt.internalBytesPerPixel();
         }
 
-        @Override public float[]    getPixels()    { throw new UnsupportedOperationException("GPU-only"); }
-        @Override public FloatBuffer floatBuffer() { throw new UnsupportedOperationException("GPU-only"); }
-        @Override public TileData   copy()         { throw new UnsupportedOperationException("cannot be copied"); }
+        @Override
+        public float[] getPixels() {
+            throw new UnsupportedOperationException("GPU-only");
+        }
+
+        @Override
+        public FloatBuffer floatBuffer() {
+            throw new UnsupportedOperationException("GPU-only");
+        }
+
+        @Override
+        public TileData copy() {
+            throw new UnsupportedOperationException("cannot be copied");
+        }
     }
 }

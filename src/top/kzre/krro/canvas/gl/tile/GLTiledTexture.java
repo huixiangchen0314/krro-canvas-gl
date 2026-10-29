@@ -2,7 +2,6 @@ package top.kzre.krro.canvas.gl.tile;
 
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.resource.GLTexturePool;
-import top.kzre.krro.core.util.AsyncExecutor;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.TiledCanvas;
 

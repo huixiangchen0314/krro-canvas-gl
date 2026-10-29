@@ -42,7 +42,6 @@ public final class CompositeRequest {
     private final GLFramebuffer fboB;
     private final GLCompositeContext context;
 
-
     private CompositeRequest(GLCompositeContext context, ViewTileInfo viewTileInfo, List<ShaderDraw> draws, AtlasPoolPage page,
                              GLFramebuffer fboA,
                              GLFramebuffer fboB) {
@@ -60,17 +59,17 @@ public final class CompositeRequest {
                                       AtlasPoolPage page,
                                       GLFramebuffer fboA,
                                       GLFramebuffer fboB) {
-        if (page == null)         throw new IllegalArgumentException("page must not be null");
+        if (page == null) throw new IllegalArgumentException("page must not be null");
         if (viewTileInfo == null) throw new IllegalArgumentException("viewportGrid must not be null");
-        if (bundles == null)      throw new IllegalArgumentException("bundles must not be null");
+        if (bundles == null) throw new IllegalArgumentException("bundles must not be null");
         for (ShaderDraw b : bundles) {
             if (b == null) {
                 throw new IllegalArgumentException("bundles must not contain null");
             }
         }
-        if (fboA == null)         throw new IllegalArgumentException("fboA must not be null");
-        if (fboB == null)         throw new IllegalArgumentException("fboB must not be null");
-        if (fboA == fboB)         throw new IllegalArgumentException("fboA and fboB must differ");
+        if (fboA == null) throw new IllegalArgumentException("fboA must not be null");
+        if (fboB == null) throw new IllegalArgumentException("fboB must not be null");
+        if (fboA == fboB) throw new IllegalArgumentException("fboA and fboB must differ");
 
         return new CompositeRequest(
                 context,
@@ -80,14 +79,28 @@ public final class CompositeRequest {
                 fboA, fboB);
     }
 
-    /** atlas 换页能力。所有 bundle 共享。 */
-    public AtlasPoolPage          getPage()         { return page; }
+    /**
+     * atlas 换页能力。所有 bundle 共享。
+     */
+    public AtlasPoolPage getPage() {
+        return page;
+    }
 
-    public ViewTileInfo getViewportGrid() { return viewTileInfo; }
-    public List<ShaderDraw> getDraws()      { return draws; }
+    public ViewTileInfo getViewportGrid() {
+        return viewTileInfo;
+    }
 
-    public GLFramebuffer          getFboA()         { return fboA; }
-    public GLFramebuffer          getFboB()         { return fboB; }
+    public List<ShaderDraw> getDraws() {
+        return draws;
+    }
+
+    public GLFramebuffer getFboA() {
+        return fboA;
+    }
+
+    public GLFramebuffer getFboB() {
+        return fboB;
+    }
 
     @Override
     public String toString() {

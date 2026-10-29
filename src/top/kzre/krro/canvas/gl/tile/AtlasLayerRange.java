@@ -41,20 +41,40 @@ public final class AtlasLayerRange {
         this.count = count;
     }
 
-    /** 所属 atlas。 */
-    public GLAtlas getAtlas() { return atlas; }
+    /**
+     * 所属 atlas。
+     */
+    public GLAtlas getAtlas() {
+        return atlas;
+    }
 
-    /** 起始层索引（含）。 */
-    public int getStart() { return start; }
+    /**
+     * 起始层索引（含）。
+     */
+    public int getStart() {
+        return start;
+    }
 
-    /** 连续层数。 */
-    public int getCount() { return count; }
+    /**
+     * 连续层数。
+     */
+    public int getCount() {
+        return count;
+    }
 
-    /** 终点层索引（不含）——即 {@code start + count}。 */
-    public int getEnd() { return start + count; }
+    /**
+     * 终点层索引（不含）——即 {@code start + count}。
+     */
+    public int getEnd() {
+        return start + count;
+    }
 
-    /** 区间是否为空——{@code count == 0}。 */
-    public boolean isEmpty() { return count == 0; }
+    /**
+     * 区间是否为空——{@code count == 0}。
+     */
+    public boolean isEmpty() {
+        return count == 0;
+    }
 
     // ═══════════════════════════════════════════════
     // 值语义

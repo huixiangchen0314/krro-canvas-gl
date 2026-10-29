@@ -9,7 +9,7 @@ public final class ShaderLayerTileKey {
         this.tileKey = tileKey;
     }
 
-    public static ShaderLayerTileKey of(ILayer layer, long tileKey){
+    public static ShaderLayerTileKey of(ILayer layer, long tileKey) {
         return new ShaderLayerTileKey(layer, tileKey);
     }
 

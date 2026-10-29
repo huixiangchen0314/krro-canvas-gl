@@ -87,37 +87,11 @@ public final class GLInstanceBuffer implements AutoCloseable {
     // ═══════════════════════════════════════════════
 
     /**
-     * 单个 attribute 的描述。
+     * 入口校验。
      */
-    public static final class Attribute {
-        public final int     location;
-        public final int     components;
-        public final int     glType;
-        public final int     offsetBytes;
-        public final boolean normalized;
-        public final int     divisor;
-
-        /**
-         * @param location    attribute location
-         * @param components  分量数 1~4
-         * @param glType      GL_FLOAT / GL_INT / GL_UNSIGNED_BYTE / ...
-         * @param offsetBytes 相对实例起始的字节偏移
-         * @param normalized  是否归一化（整数转 float 时用）
-         * @param divisor     通常为 1（每实例一次）
-         */
-        public Attribute(int location, int components, int glType,
-                         int offsetBytes, boolean normalized, int divisor) {
-            if (location < 0)      throw new IllegalArgumentException("location < 0");
-            if (components < 1 || components > 4)
-                throw new IllegalArgumentException("components must be 1~4");
-            if (offsetBytes < 0)   throw new IllegalArgumentException("offsetBytes < 0");
-            if (divisor < 0)       throw new IllegalArgumentException("divisor < 0");
-            this.location    = location;
-            this.components  = components;
-            this.glType      = glType;
-            this.offsetBytes = offsetBytes;
-            this.normalized  = normalized;
-            this.divisor     = divisor;
+    private static void checkAttrs(List<Attribute> attrs) {
+        if (attrs == null || attrs.isEmpty()) {
+            throw new IllegalArgumentException("attrs must not be empty");
         }
     }
 
@@ -162,13 +136,6 @@ public final class GLInstanceBuffer implements AutoCloseable {
         }
     }
 
-    /** 入口校验。 */
-    private static void checkAttrs(List<Attribute> attrs) {
-        if (attrs == null || attrs.isEmpty()) {
-            throw new IllegalArgumentException("attrs must not be empty");
-        }
-    }
-
     /**
      * 校验每个 attribute 的字节范围是否落在 stride 内。
      *
@@ -178,7 +145,7 @@ public final class GLInstanceBuffer implements AutoCloseable {
     private void validateAttrs(List<Attribute> attrs) {
         for (Attribute a : attrs) {
             int size = GLUtils.attributeByteSize(a.glType, a.components);
-            int end  = a.offsetBytes + size;
+            int end = a.offsetBytes + size;
             if (end > strideBytes) {
                 throw new IllegalArgumentException(
                         "attribute " + a.location + " ends at byte " + end
@@ -204,10 +171,6 @@ public final class GLInstanceBuffer implements AutoCloseable {
             glVertexAttribDivisor(a.location, a.divisor);
         }
     }
-
-    // ═══════════════════════════════════════════════
-    // 上传
-    // ═══════════════════════════════════════════════
 
     /**
      * 上传实例数据。超出容量抛异常——池化设计下尺寸固定。
@@ -247,7 +210,7 @@ public final class GLInstanceBuffer implements AutoCloseable {
     }
 
     // ═══════════════════════════════════════════════
-    // 关闭
+    // 上传
     // ═══════════════════════════════════════════════
 
     /**
@@ -273,19 +236,68 @@ public final class GLInstanceBuffer implements AutoCloseable {
     }
 
     // ═══════════════════════════════════════════════
+    // 关闭
+    // ═══════════════════════════════════════════════
+
+    public int getVbo() {
+        return vbo;
+    }
+
+    // ═══════════════════════════════════════════════
     // 访问器
     // ═══════════════════════════════════════════════
 
-    public int  getVbo()               { return vbo; }
-    public int  getStrideBytes()       { return strideBytes; }
-    public int  getCapacityInstances() { return capacityInstances; }
+    public int getStrideBytes() {
+        return strideBytes;
+    }
+
+    public int getCapacityInstances() {
+        return capacityInstances;
+    }
 
     /**
      * 是否已关闭。可被任意线程调用——{@code closed} 是 {@code volatile}。
      */
-    public boolean isClosed()          { return closed; }
+    public boolean isClosed() {
+        return closed;
+    }
 
     private void checkAlive() {
         if (closed) throw new IllegalStateException("GLInstanceBuffer closed");
+    }
+
+    /**
+     * 单个 attribute 的描述。
+     */
+    public static final class Attribute {
+        public final int location;
+        public final int components;
+        public final int glType;
+        public final int offsetBytes;
+        public final boolean normalized;
+        public final int divisor;
+
+        /**
+         * @param location    attribute location
+         * @param components  分量数 1~4
+         * @param glType      GL_FLOAT / GL_INT / GL_UNSIGNED_BYTE / ...
+         * @param offsetBytes 相对实例起始的字节偏移
+         * @param normalized  是否归一化（整数转 float 时用）
+         * @param divisor     通常为 1（每实例一次）
+         */
+        public Attribute(int location, int components, int glType,
+                         int offsetBytes, boolean normalized, int divisor) {
+            if (location < 0) throw new IllegalArgumentException("location < 0");
+            if (components < 1 || components > 4)
+                throw new IllegalArgumentException("components must be 1~4");
+            if (offsetBytes < 0) throw new IllegalArgumentException("offsetBytes < 0");
+            if (divisor < 0) throw new IllegalArgumentException("divisor < 0");
+            this.location = location;
+            this.components = components;
+            this.glType = glType;
+            this.offsetBytes = offsetBytes;
+            this.normalized = normalized;
+            this.divisor = divisor;
+        }
     }
 }

@@ -10,7 +10,8 @@ import java.nio.charset.StandardCharsets;
  */
 public final class Resources {
 
-    private Resources() {}
+    private Resources() {
+    }
 
     /**
      * 从 classpath 加载文本文件，以 UTF-8 解码。

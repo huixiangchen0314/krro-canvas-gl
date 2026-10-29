@@ -68,13 +68,19 @@ public final class TileBufferGroup {
     // 纹理单元
     // ═══════════════════════════════════════════════
 
-    /** 瓦片表绑定的纹理单元。 */
+    /**
+     * 瓦片表绑定的纹理单元。
+     */
     private final int tileTableUnit;
 
-    /** 图层表绑定的纹理单元。 */
+    /**
+     * 图层表绑定的纹理单元。
+     */
     private final int layerTableUnit;
 
-    /** 索引表绑定的纹理单元。 */
+    /**
+     * 索引表绑定的纹理单元。
+     */
     private final int indexTableUnit;
 
     // ═══════════════════════════════════════════════
@@ -103,7 +109,9 @@ public final class TileBufferGroup {
      */
     private final float[] layerTable;
 
-    /** 图层表条目数。 */
+    /**
+     * 图层表条目数。
+     */
     private final int layerEntryCount;
 
     /**
@@ -112,7 +120,9 @@ public final class TileBufferGroup {
      */
     private final float[] tileTable;
 
-    /** 瓦片表条目数。 */
+    /**
+     * 瓦片表条目数。
+     */
     private final int tileEntryCount;
 
     /**
@@ -122,7 +132,9 @@ public final class TileBufferGroup {
      */
     private final int[] indexList;
 
-    /** 索引总数。 */
+    /**
+     * 索引总数。
+     */
     private final int indexCount;
 
     // ═══════════════════════════════════════════════
@@ -137,36 +149,64 @@ public final class TileBufferGroup {
                            float[] layerTable, int layerEntryCount,
                            float[] tileTable, int tileEntryCount,
                            int[] indexList, int indexCount) {
-        this.tileTableUnit   = tileTableUnit;
-        this.layerTableUnit  = layerTableUnit;
-        this.indexTableUnit  = indexTableUnit;
-        this.offsets         = offsets;
-        this.counts          = counts;
-        this.layerTable      = layerTable;
+        this.tileTableUnit = tileTableUnit;
+        this.layerTableUnit = layerTableUnit;
+        this.indexTableUnit = indexTableUnit;
+        this.offsets = offsets;
+        this.counts = counts;
+        this.layerTable = layerTable;
         this.layerEntryCount = layerEntryCount;
-        this.tileTable       = tileTable;
-        this.tileEntryCount  = tileEntryCount;
-        this.indexList       = indexList;
-        this.indexCount      = indexCount;
+        this.tileTable = tileTable;
+        this.tileEntryCount = tileEntryCount;
+        this.indexList = indexList;
+        this.indexCount = indexCount;
     }
 
     // ═══════════════════════════════════════════════
     // 访问器
     // ═══════════════════════════════════════════════
 
-    public int   getTileTableUnit()           { return tileTableUnit; }
-    public int   getLayerTableUnit()          { return layerTableUnit; }
-    public int   getIndexTableUnit()          { return indexTableUnit; }
+    public int getTileTableUnit() {
+        return tileTableUnit;
+    }
 
-    public int[] getOffsets()                 { return offsets; }
-    public int[] getCounts()                  { return counts; }
+    public int getLayerTableUnit() {
+        return layerTableUnit;
+    }
 
-    public float[] getLayerTable()            { return layerTable; }
-    public int     getLayerEntryCount()       { return layerEntryCount; }
+    public int getIndexTableUnit() {
+        return indexTableUnit;
+    }
 
-    public float[] getTileTable()             { return tileTable; }
-    public int     getTileEntryCount()        { return tileEntryCount; }
+    public int[] getOffsets() {
+        return offsets;
+    }
 
-    public int[]   getIndexList()             { return indexList; }
-    public int     getIndexCount()            { return indexCount; }
+    public int[] getCounts() {
+        return counts;
+    }
+
+    public float[] getLayerTable() {
+        return layerTable;
+    }
+
+    public int getLayerEntryCount() {
+        return layerEntryCount;
+    }
+
+    public float[] getTileTable() {
+        return tileTable;
+    }
+
+    public int getTileEntryCount() {
+        return tileEntryCount;
+    }
+
+    public int[] getIndexList() {
+        return indexList;
+    }
+
+    public int getIndexCount() {
+        return indexCount;
+    }
 }

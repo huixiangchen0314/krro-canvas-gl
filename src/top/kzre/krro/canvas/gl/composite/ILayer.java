@@ -18,9 +18,10 @@ import top.kzre.krro.util.tile.TiledCanvas;
  * 逆变换由 shader 在片段阶段计算——合成管线不预求逆。
  *
  * <p><b>线程契约</b>：纯数据，任意线程可构造和读取。
+ *
  * @see top.kzre.colorutils.blend.Blends
  */
-public interface ILayer extends AutoCloseable{
+public interface ILayer extends AutoCloseable {
 
     /**
      * 图层标识。用于调试、日志、缓存。不参与合成逻辑。

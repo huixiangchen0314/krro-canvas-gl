@@ -7,7 +7,8 @@ package top.kzre.krro.canvas.gl.util;
  */
 public final class PrecisionUtils {
 
-    private PrecisionUtils() {}
+    private PrecisionUtils() {
+    }
 
     /**
      * float → IEEE 754 half（binary16）位模式。
@@ -29,7 +30,7 @@ public final class PrecisionUtils {
     public static short floatToHalf(float f) {
         int bits = Float.floatToIntBits(f);
         int sign = (bits >>> 16) & 0x8000;
-        int exp  = (bits >>> 23) & 0xFF;
+        int exp = (bits >>> 23) & 0xFF;
         int mant = bits & 0x7FFFFF;
 
         // Inf / NaN：NaN 置一个 quiet 位，Inf 保持
@@ -91,8 +92,8 @@ public final class PrecisionUtils {
             return mant;
         }
         int truncated = mant & ((1 << shift) - 1);
-        int kept      = mant >>> shift;
-        int half      = 1 << (shift - 1);
+        int kept = mant >>> shift;
+        int half = 1 << (shift - 1);
         // round-to-nearest-even：
         //   大于一半 → 进位
         //   小于一半 → 不进位
@@ -118,7 +119,7 @@ public final class PrecisionUtils {
     public static float halfToFloat(short h) {
         int bits = h & 0xFFFF;
         int sign = (bits & 0x8000) << 16;
-        int exp  = (bits >>> 10) & 0x1F;
+        int exp = (bits >>> 10) & 0x1F;
         int mant = bits & 0x3FF;
 
         if (exp == 0) {

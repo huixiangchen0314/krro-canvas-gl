@@ -16,7 +16,7 @@ public class MockClearBlueCompositeTask implements Callable<GLFramebuffer> {
     private final GLFramebuffer fbo;
 
     public MockClearBlueCompositeTask(GLFramebuffer fbo) {
-       this.fbo = fbo;
+        this.fbo = fbo;
     }
 
     @Override

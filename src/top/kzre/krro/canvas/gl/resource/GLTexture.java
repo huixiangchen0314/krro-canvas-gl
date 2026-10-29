@@ -1,10 +1,6 @@
 package top.kzre.krro.canvas.gl.resource;
 
-import org.lwjgl.opengl.ARBTextureStorage;
-import org.lwjgl.opengl.GL;
-import org.lwjgl.opengl.GL12;
-import org.lwjgl.opengl.GL42;
-import org.lwjgl.opengl.GLCapabilities;
+import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
@@ -71,6 +67,14 @@ public final class GLTexture implements GLBindable, AutoCloseable {
     // 构造
     // ═══════════════════════════════════════════════
     private int downloadFbo = 0;   // 懒创建的下载专用 FBO
+    // ═══════════════════════════════════════════════
+    // 绑定
+    // ═══════════════════════════════════════════════
+    private int unit = -1;
+
+    // ═══════════════════════════════════════════════
+    // 工厂方法
+    // ═══════════════════════════════════════════════
 
     private GLTexture(int handle,
                       int width, int height, int layers,
@@ -81,10 +85,6 @@ public final class GLTexture implements GLBindable, AutoCloseable {
         this.layers = layers;
         this.pixelFormat = pixelFormat;
     }
-
-    // ═══════════════════════════════════════════════
-    // 工厂方法
-    // ═══════════════════════════════════════════════
 
     /**
      * 创建一张 RGBA8 纹理数组（最常用），不初始化内容。
@@ -160,6 +160,10 @@ public final class GLTexture implements GLBindable, AutoCloseable {
         return new GLTexture(handle, width, height, layers, pixelFormat);
     }
 
+    // ═══════════════════════════════════════════════
+    // 上传 / 下载
+    // ═══════════════════════════════════════════════
+
     /**
      * 分配存储。
      *
@@ -186,9 +190,16 @@ public final class GLTexture implements GLBindable, AutoCloseable {
         }
     }
 
-    // ═══════════════════════════════════════════════
-    // 上传 / 下载
-    // ═══════════════════════════════════════════════
+    /**
+     * 解绑指定纹理单元上的 2D_ARRAY 目标。
+     *
+     * <p>便利方法，等价于：
+     * {@code glActiveTexture(GL_TEXTURE0 + unit); glBindTexture(GL_TEXTURE_2D_ARRAY, 0);}
+     */
+    public static void unbind(int unit) {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+    }
 
     /**
      * 上传一个 tile（一层的全部内容）。
@@ -372,11 +383,6 @@ public final class GLTexture implements GLBindable, AutoCloseable {
         return buffer;
     }
 
-    // ═══════════════════════════════════════════════
-    // 绑定
-    // ═══════════════════════════════════════════════
-    private int unit = -1;
-
     /**
      * 绑定到指定纹理单元。
      *
@@ -393,17 +399,6 @@ public final class GLTexture implements GLBindable, AutoCloseable {
         checkAlive();
         glActiveTexture(GL_TEXTURE0 + unit);
         glBindTexture(GL_TEXTURE_2D_ARRAY, handle);
-    }
-
-    /**
-     * 解绑指定纹理单元上的 2D_ARRAY 目标。
-     *
-     * <p>便利方法，等价于：
-     * {@code glActiveTexture(GL_TEXTURE0 + unit); glBindTexture(GL_TEXTURE_2D_ARRAY, 0);}
-     */
-    public static void unbind(int unit) {
-        glActiveTexture(GL_TEXTURE0 + unit);
-        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     }
 
     // ═══════════════════════════════════════════════

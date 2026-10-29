@@ -3,9 +3,9 @@
     [taoensso.timbre :as log]
     [top.kzre.krro.canvas.core.layer.render.batch :as batch]
     [top.kzre.krro.canvas.gl.composite.layer :as layer]
-    [top.kzre.krro.core.util.tracker :as tracker]
     [top.kzre.krro.canvas.gl.composite.rasterize :as rasterize]
-    [top.kzre.krro.core.util.promise :as promise])
+    [top.kzre.krro.core.util.promise :as promise]
+    [top.kzre.krro.core.util.tracker :as tracker])
   (:import
     (top.kzre.krro.canvas.gl.composite GLCompositeContext Render)
     (top.kzre.krro.canvas.gl.util Tuple4f)

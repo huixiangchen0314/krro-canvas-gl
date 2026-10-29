@@ -14,7 +14,9 @@ package top.kzre.krro.canvas.gl.util;
  */
 public final class Range implements Comparable<Range> {
 
-    /** 空区间。所有方法对其行为合法——{@code count == 0}。 */
+    /**
+     * 空区间。所有方法对其行为合法——{@code count == 0}。
+     */
     public static final Range EMPTY = new Range(0, 0);
 
     private final int start;
@@ -33,17 +35,33 @@ public final class Range implements Comparable<Range> {
         this.count = count;
     }
 
-    /** 起点（含）。 */
-    public int getStart() { return start; }
+    /**
+     * 起点（含）。
+     */
+    public int getStart() {
+        return start;
+    }
 
-    /** 长度。 */
-    public int getCount() { return count; }
+    /**
+     * 长度。
+     */
+    public int getCount() {
+        return count;
+    }
 
-    /** 终点（不含）——即 {@code start + count}。 */
-    public int getEnd() { return start + count; }
+    /**
+     * 终点（不含）——即 {@code start + count}。
+     */
+    public int getEnd() {
+        return start + count;
+    }
 
-    /** 区间是否为空——{@code count == 0}。 */
-    public boolean isEmpty() { return count == 0; }
+    /**
+     * 区间是否为空——{@code count == 0}。
+     */
+    public boolean isEmpty() {
+        return count == 0;
+    }
 
     /**
      * 本区间是否完全包含 {@code other}。

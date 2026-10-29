@@ -31,10 +31,14 @@ import java.util.Map;
  */
 public final class GLProgramCache implements GLThreadAffine, AutoCloseable {
     private final SerialExecutor glThread;
-    /** key → factory。启动时注册，运行期只读。 */
+    /**
+     * key → factory。启动时注册，运行期只读。
+     */
     private final Map<Object, GLProgramFactory> factoryMap = new HashMap<>();
 
-    /** key → 已编译的 program。未命中触发编译后写入。 */
+    /**
+     * key → 已编译的 program。未命中触发编译后写入。
+     */
     private final Map<Object, GLProgram> programMap = new HashMap<>();
 
     public GLProgramCache(SerialExecutor glThread) {
@@ -111,17 +115,23 @@ public final class GLProgramCache implements GLThreadAffine, AutoCloseable {
         return programMap.get(key);
     }
 
-    /** 指定 key 的 program 是否已编译。纯读，任意线程。 */
+    /**
+     * 指定 key 的 program 是否已编译。纯读，任意线程。
+     */
     public boolean isCompiled(Object key) {
         return programMap.containsKey(key);
     }
 
-    /** 已注册的 key 数量。 */
+    /**
+     * 已注册的 key 数量。
+     */
     public int getRegisteredCount() {
         return factoryMap.size();
     }
 
-    /** 已编译的 program 数量。 */
+    /**
+     * 已编译的 program 数量。
+     */
     public int getCompiledCount() {
         return programMap.size();
     }

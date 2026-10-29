@@ -34,16 +34,24 @@ package top.kzre.krro.canvas.gl.tile;
  */
 public final class GLTiledTextureLayout {
 
-    /** texture array 的层数。 */
+    /**
+     * texture array 的层数。
+     */
     private final int layers;
 
-    /** 每个瓦片的边长（像素）。 */
+    /**
+     * 每个瓦片的边长（像素）。
+     */
     private final int tileSize;
 
-    /** 每层水平方向瓦片数（列数）。 */
+    /**
+     * 每层水平方向瓦片数（列数）。
+     */
     private final int tilesPerRow;
 
-    /** 每层垂直方向瓦片数（行数）。 */
+    /**
+     * 每层垂直方向瓦片数（行数）。
+     */
     private final int tilesPerColumn;
 
     // ═══════════════════════════════════════════════
@@ -66,9 +74,9 @@ public final class GLTiledTextureLayout {
             throw new IllegalArgumentException(
                     "tilesPerColumn must be > 0: " + tilesPerColumn);
         }
-        this.layers         = layers;
-        this.tileSize       = tileSize;
-        this.tilesPerRow    = tilesPerRow;
+        this.layers = layers;
+        this.tileSize = tileSize;
+        this.tilesPerRow = tilesPerRow;
         this.tilesPerColumn = tilesPerColumn;
     }
 
@@ -114,7 +122,7 @@ public final class GLTiledTextureLayout {
             throw new IllegalArgumentException(
                     "invalid pixel size: " + pixelWidth + "x" + pixelHeight);
         }
-        int rows = (pixelWidth  + tileSize - 1) / tileSize;
+        int rows = (pixelWidth + tileSize - 1) / tileSize;
         int cols = (pixelHeight + tileSize - 1) / tileSize;
         return new GLTiledTextureLayout(layers, tileSize, rows, cols);
     }
@@ -123,32 +131,68 @@ public final class GLTiledTextureLayout {
     // 访问器
     // ═══════════════════════════════════════════════
 
-    /** texture array 层数。 */
-    public int getLayers() { return layers; }
+    /**
+     * texture array 层数。
+     */
+    public int getLayers() {
+        return layers;
+    }
 
-    /** 瓦片边长（像素）。 */
-    public int getTileSize() { return tileSize; }
+    /**
+     * 瓦片边长（像素）。
+     */
+    public int getTileSize() {
+        return tileSize;
+    }
 
-    /** 每层水平方向瓦片数（列数）。 */
-    public int getTilesPerRow() { return tilesPerRow; }
+    /**
+     * 每层水平方向瓦片数（列数）。
+     */
+    public int getTilesPerRow() {
+        return tilesPerRow;
+    }
 
-    /** 每层垂直方向瓦片数（行数）。 */
-    public int getTilesPerColumn() { return tilesPerColumn; }
+    /**
+     * 每层垂直方向瓦片数（行数）。
+     */
+    public int getTilesPerColumn() {
+        return tilesPerColumn;
+    }
 
-    /** 每层瓦片总数 = {@code tilesPerRow * tilesPerColumn}。 */
-    public int getTilesPerLayer() { return tilesPerRow * tilesPerColumn; }
+    /**
+     * 每层瓦片总数 = {@code tilesPerRow * tilesPerColumn}。
+     */
+    public int getTilesPerLayer() {
+        return tilesPerRow * tilesPerColumn;
+    }
 
-    /** 每层宽度（像素）= {@code tilesPerRow * tileSize}。 */
-    public int getLayerWidth() { return tilesPerRow * tileSize; }
+    /**
+     * 每层宽度（像素）= {@code tilesPerRow * tileSize}。
+     */
+    public int getLayerWidth() {
+        return tilesPerRow * tileSize;
+    }
 
-    /** 每层高度（像素）= {@code tilesPerColumn * tileSize}。 */
-    public int getLayerHeight() { return tilesPerColumn * tileSize; }
+    /**
+     * 每层高度（像素）= {@code tilesPerColumn * tileSize}。
+     */
+    public int getLayerHeight() {
+        return tilesPerColumn * tileSize;
+    }
 
-    /** 总槽位 = {@code layers * tilesPerLayer}。 */
-    public int getCapacity() { return layers * getTilesPerLayer(); }
+    /**
+     * 总槽位 = {@code layers * tilesPerLayer}。
+     */
+    public int getCapacity() {
+        return layers * getTilesPerLayer();
+    }
 
-    /** 是否正方形网格。 */
-    public boolean isSquare() { return tilesPerRow == tilesPerColumn; }
+    /**
+     * 是否正方形网格。
+     */
+    public boolean isSquare() {
+        return tilesPerRow == tilesPerColumn;
+    }
 
     /**
      * 每层每边的瓦片数——仅正方形布局有效。

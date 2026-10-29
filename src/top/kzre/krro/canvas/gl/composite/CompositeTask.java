@@ -2,12 +2,15 @@ package top.kzre.krro.canvas.gl.composite;
 
 import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.UploadableTile;
-
 import top.kzre.krro.canvas.gl.resource.GLBindable;
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.resource.GLInstanceBuffer;
 import top.kzre.krro.canvas.gl.resource.GLQuad;
-import top.kzre.krro.canvas.gl.tile.*;
+import top.kzre.krro.canvas.gl.tile.AtlasLayerRange;
+import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
+import top.kzre.krro.canvas.gl.tile.GLTile;
+import top.kzre.krro.canvas.gl.tile.TileRef;
+import top.kzre.krro.canvas.gl.util.ResourceUtils;
 import top.kzre.krro.util.tile.Tile;
 
 import java.nio.ByteBuffer;
@@ -18,7 +21,8 @@ import java.util.concurrent.Callable;
 
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL15.*;
-import static org.lwjgl.opengl.GL30.*;
+import static org.lwjgl.opengl.GL30.GL_R32UI;
+import static org.lwjgl.opengl.GL30.GL_RGBA32F;
 import static org.lwjgl.opengl.GL31.GL_TEXTURE_BUFFER;
 import static org.lwjgl.opengl.GL31.glTexBuffer;
 
@@ -36,12 +40,17 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
         this.request = request;
     }
 
+    private static String ms(long ns) {
+        return String.format("%.2f", ns / 1_000_000.0);
+    }
+
     @Override
     public GLFramebuffer call() throws Exception {
         long tCall = System.nanoTime();
 
         ViewTileInfo viewport = request.getViewportGrid();
         AtlasPoolPage atlasPage = request.getPage();
+
         List<ShaderDraw> draws = request.getDraws();
         GLCompositeContext context = request.getContext();
         GLFramebuffer[] fboPair = {request.getFboA(), request.getFboB()};
@@ -168,9 +177,12 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                         + " | total=" + ms(tPageInNs + tTableNs + tInstNs + tDrawNs) + "ms");
             }
         } finally {
-            for (GLInstanceBuffer b : transientBuffers) {
-                b.close();
+            atlasPage.close();
+            RuntimeException error = ResourceUtils.closeDelayError(transientBuffers);
+            if (error != null) {
+                System.out.println(error.getMessage());
             }
+
         }
 
         long tEnd = System.nanoTime();
@@ -180,10 +192,6 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                 + " | total=" + ms(tEnd - tCall) + "ms");
 
         return fboPair[(draws.size() - 1) % 2];
-    }
-
-    private static String ms(long ns) {
-        return String.format("%.2f", ns / 1_000_000.0);
     }
 
     // ═══════════════════════════════════════════════
@@ -374,12 +382,12 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                                              int instanceLocation,
                                              ViewTileInfo grid) {
         int n = grid.getViewTileCount();
-        int[] tileXY  = grid.getTileXY();
+        int[] tileXY = grid.getTileXY();
         int[] offsets = group.getOffsets();
-        int[] counts  = group.getCounts();
+        int[] counts = group.getCounts();
 
         int strideBytes = 4 * Float.BYTES;               // 16 字节 / 实例
-        int capacity    = Math.max(n, 1);                // 至少 1，避免 0 容量
+        int capacity = Math.max(n, 1);                // 至少 1，避免 0 容量
 
         GLInstanceBuffer buffer = GLInstanceBuffer.create(strideBytes, capacity);
         boolean ok = false;

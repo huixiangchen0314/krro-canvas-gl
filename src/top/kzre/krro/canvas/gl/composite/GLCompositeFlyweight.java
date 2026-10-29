@@ -1,7 +1,6 @@
 package top.kzre.krro.canvas.gl.composite;
 
 import top.kzre.krro.canvas.gl.resource.*;
-import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
 import top.kzre.krro.canvas.gl.tile.GLAtlasFactory;
 import top.kzre.krro.canvas.gl.tile.GLAtlasPool;
 import top.kzre.krro.canvas.gl.util.ExecutorUtils;
@@ -28,10 +27,8 @@ import java.util.concurrent.CompletableFuture;
  * {@link #close()} 任意线程——非 GL 线程会自动调度。
  */
 public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable {
-
     private final SerialExecutor glExecutor;
     private final GLAtlasPool atlasPool;
-    private final AtlasPoolPage atlasPoolPage;
     private final int tileSize;
     private final PixelFormat pixelFormat;
     private final NoGLTexturePool noTexPool;
@@ -61,7 +58,6 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
 
         this.glExecutor = glExecutor;
         this.atlasPool = atlasPool;
-        this.atlasPoolPage = atlasPool.page();
         this.tileSize = tileSize;
         this.pixelFormat = pixelFormat;
         this.noTexPool = new NoGLTexturePool(glExecutor);
@@ -74,6 +70,10 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
 
     // ── 访问器 ────────────────────────────────────
 
+    public static Builder builder() {
+        return new Builder();
+    }
+
     @Override
     public SerialExecutor getGlExecutor() {
         return glExecutor;
@@ -81,10 +81,6 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
 
     public GLAtlasPool getAtlasPool() {
         return atlasPool;
-    }
-
-    public AtlasPoolPage getAtlasPoolPage() {
-        return atlasPoolPage;
     }
 
     public int getTileSize() {
@@ -119,6 +115,8 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
         return emptyCanvasTpl.copy().setReadonly(true);
     }
 
+    // ── 生命周期 ──────────────────────────────────
+
     /**
      * 共享 quad。首次调用时惰性创建。
      */
@@ -128,8 +126,6 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
         }
         return quad;
     }
-
-    // ── 生命周期 ──────────────────────────────────
 
     @Override
     public void close() {
@@ -147,16 +143,20 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
         }
     }
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
     public static class Builder {
         private SerialExecutor glExecutor;
         private PixelFormat pixelFormat;
         private int tileSize;
         private int atlasCapacity;
         private GLAtlasFactory atlasFactory;
+
+        private static GLQuad buildQuad() {
+            GLQuad q;
+            q = GLQuad.create(GLQuad.Orientation.Y_DOWN);
+            q.bindPositionAttribute(ShaderConstants.ATTRIBUTE_POSITION_QUAD);
+            return q;
+        }
+
         public Builder glExecutor(SerialExecutor glExecutor) {
             this.glExecutor = glExecutor;
             return this;
@@ -182,14 +182,7 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
             return this;
         }
 
-        private static GLQuad buildQuad() {
-            GLQuad q;
-            q = GLQuad.create(GLQuad.Orientation.Y_DOWN);
-            q.bindPositionAttribute(ShaderConstants.ATTRIBUTE_POSITION_QUAD);
-            return q;
-        }
-
-        public CompletableFuture<GLCompositeFlyweight> build(){
+        public CompletableFuture<GLCompositeFlyweight> build() {
             if (glExecutor == null) {
                 throw new IllegalStateException("glExecutor must not be null");
             }
@@ -212,7 +205,8 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
                 GLProgramCache programs = new GLProgramCache(glExecutor);
                 CompositeGLProgramManager programManager = new CompositeGLProgramManager(programs);
                 programManager.warmup();
-                GLAtlasPool glAtlasPool = new GLAtlasPool(atlasCapacity, atlasFactory);
+                GLAtlasPool glAtlasPool = new GLAtlasPool(glExecutor, atlasCapacity, atlasFactory);
+                glAtlasPool.warmup();
                 return new GLCompositeFlyweight(
                         glExecutor,
                         tileSize,

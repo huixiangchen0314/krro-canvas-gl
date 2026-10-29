@@ -2,12 +2,12 @@
   (:import
     (top.kzre.colorutils.blend Blends)
     (top.kzre.krro.canvas.gl.composite WrapLayer)
-    [top.kzre.krro.util.math KMath]
+    (top.kzre.krro.util.math KMath)
     (top.kzre.krro.util.tile TiledCanvas)))
 
 
 (defn wrap-layer [layer & {:keys [default-prefix]
-                           :or {default-prefix "wrap-layer"}}]
+                           :or   {default-prefix "wrap-layer"}}]
   (WrapLayer.
     (:id layer default-prefix)
     (:canvas layer)
@@ -20,7 +20,7 @@
 (defn wrap-canvas-as-layer
   "把背景画布包装成图层，不释放"
   [^TiledCanvas canvas & {:keys [prefix]
-                          :or {prefix "wrap-canvas-layer-"}}]
+                          :or   {prefix "wrap-canvas-layer-"}}]
   (WrapLayer.
     (keyword (str prefix (random-uuid)))
     canvas

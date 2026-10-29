@@ -1,11 +1,12 @@
-package top.kzre.krro.canvas.gl.composite;
+package top.kzre.krro.canvas.gl.tile;
 
 import clojure.lang.Keyword;
 import top.kzre.colorutils.blend.Blends;
+import top.kzre.krro.canvas.gl.composite.ILayer;
+import top.kzre.krro.canvas.gl.composite.WrapLayer;
 import top.kzre.krro.canvas.gl.resource.FixedSizeFrameBufferPool;
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
-import top.kzre.krro.canvas.gl.tile.GLTiledTextureLayer;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.math.KMath;
 import top.kzre.krro.util.tile.TiledCanvas;
@@ -39,7 +40,8 @@ import java.util.UUID;
  */
 public final class FBOUtils {
 
-    private FBOUtils() {}
+    private FBOUtils() {
+    }
 
     /**
      * 把 FBO 包装成画布——<b>转移所有权</b>。
@@ -104,7 +106,8 @@ public final class FBOUtils {
                 tex, tileSize,
                 layer, 1,
                 glExecutor,
-                () -> {}
+                () -> {
+                }
         );
     }
 
@@ -133,7 +136,7 @@ public final class FBOUtils {
     ) {
         TiledCanvas canvas = wrapCanvas(fbo, tileSize, glExecutor);
         return new WrapLayer(
-                Keyword.intern(null,"fbo-" + UUID.randomUUID()),
+                Keyword.intern(null, "fbo-" + UUID.randomUUID()),
                 canvas,
                 KMath.mat2dIdentity(),
                 true,

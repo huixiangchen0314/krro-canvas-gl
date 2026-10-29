@@ -39,7 +39,9 @@ import java.util.function.Supplier;
  */
 public final class NormalShader extends AbstractShader {
 
-    /** 单 group 的实例 attribute location。 */
+    /**
+     * 单 group 的实例 attribute location。
+     */
     private static final int INSTANCE_LOCATION = 1;
 
     private final ShaderLayerTileSet tileSet;
@@ -70,17 +72,17 @@ public final class NormalShader extends AbstractShader {
         if (viewTileInfo == null) {
             throw new IllegalArgumentException("viewTileInfo must not be null");
         }
-        if (bindables.length > ShaderConstants.MAX_LAYER_TEXTURE_UNIT_COUNT){
+        if (bindables.length > ShaderConstants.MAX_LAYER_TEXTURE_UNIT_COUNT) {
             throw new IllegalArgumentException("bindables must not exceed MAX_LAYER_TEXTURE_UNIT_COUNT");
         }
         if (imageAABB == null) {
             throw new IllegalArgumentException("imageAABB must not be null");
         }
 
-        this.tileSet      = tileSet;
+        this.tileSet = tileSet;
         this.viewTileInfo = viewTileInfo;
-        this.tileSize     = tileSize;
-        this.bindables    = bindables;
+        this.tileSize = tileSize;
+        this.bindables = bindables;
 
     }
 
@@ -135,7 +137,7 @@ public final class NormalShader extends AbstractShader {
     protected void configure() {
         GLProgram p = getProgram();
 
-        int viewWidth  = viewTileInfo.getViewWidth();
+        int viewWidth = viewTileInfo.getViewWidth();
         int viewHeight = viewTileInfo.getViewHeight();
 
         // ── 几何参数 ──
@@ -147,7 +149,7 @@ public final class NormalShader extends AbstractShader {
         p.setVec2IfPresent("uImageMaxPoint", imageAABB.z(), imageAABB.w());
 
         // ── 本 group 的三张 buffer 表单元 ──
-        p.setIntIfPresent("uTileTable",  ShaderConstants.TEXTURE_UNIT_TILE_TABLE);
+        p.setIntIfPresent("uTileTable", ShaderConstants.TEXTURE_UNIT_TILE_TABLE);
         p.setIntIfPresent("uLayerTable", ShaderConstants.TEXTURE_UNIT_LAYER_TABLE);
         p.setIntIfPresent("uIndexTable", ShaderConstants.TEXTURE_UNIT_INDEX_TABLE);
 
@@ -170,14 +172,14 @@ public final class NormalShader extends AbstractShader {
             } else if (b instanceof GLTexture) {
                 // 从纹理自身尺寸推 edge——不依赖"纹理尺寸 == 视口"这一假设
                 GLTexture tex = (GLTexture) b;
-                edgeU = Math.max(1, (tex.getWidth()  + tileSize - 1) / tileSize);
+                edgeU = Math.max(1, (tex.getWidth() + tileSize - 1) / tileSize);
                 edgeV = Math.max(1, (tex.getHeight() + tileSize - 1) / tileSize);
             } else {
                 throw new IllegalStateException(
                         "unsupported bindable at unit " + i + ": " + b);
             }
 
-            scales[i * 2]     = 1.0f / edgeU;
+            scales[i * 2] = 1.0f / edgeU;
             scales[i * 2 + 1] = 1.0f / edgeV;
         }
 

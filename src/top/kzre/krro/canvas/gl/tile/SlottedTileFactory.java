@@ -26,18 +26,9 @@ import top.kzre.krro.util.tile.*;
 public final class SlottedTileFactory implements TileFactory {
 
     /**
-     * 坐标到槽位的映射。规划阶段决定，工厂只执行。
-     */
-    @FunctionalInterface
-    public interface TileSlotMapper {
-        TextureTileSlot apply(int tx, int ty);
-    }
-
-    /**
      * 本批使用的 atlas 组。{@code atlases[i]} 绑定 unit {@code i}。
      */
     private final GLAtlas[] atlases;
-
     private final TileSlotMapper slotOf;
 
     /**
@@ -53,7 +44,7 @@ public final class SlottedTileFactory implements TileFactory {
             throw new IllegalArgumentException("slotOf must not be null");
         }
         this.atlases = atlases;
-        this.slotOf  = slotOf;
+        this.slotOf = slotOf;
     }
 
     @Override
@@ -63,10 +54,18 @@ public final class SlottedTileFactory implements TileFactory {
             return new DefaultTile(tx, ty, data);
         }
 
-        TextureTileSlot slot  = slotOf.apply(tx, ty);
-        GLAtlas  atlas = atlases[slot.getUnit()];
+        TextureTileSlot slot = slotOf.apply(tx, ty);
+        GLAtlas atlas = atlases[slot.getUnit()];
         GLTileDataImpl gl = atlas.allocateAt(
                 slot.getLayer(), slot.getDataColumn(), slot.getDataRow(), data);
         return new DefaultTile(tx, ty, gl);
+    }
+
+    /**
+     * 坐标到槽位的映射。规划阶段决定，工厂只执行。
+     */
+    @FunctionalInterface
+    public interface TileSlotMapper {
+        TextureTileSlot apply(int tx, int ty);
     }
 }

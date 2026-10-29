@@ -23,16 +23,24 @@ public final class GLTileDescriptor {
     // 字段
     // ═══════════════════════════════════════════════
     private final int unit;
-    /** texture array 中的层索引。 */
+    /**
+     * texture array 中的层索引。
+     */
     private final int layer;
 
-    /** tile 边长（像素）。 */
+    /**
+     * tile 边长（像素）。
+     */
     private final int tileSize;
 
-    /** 层内 uv 起点 u（左下角）。 */
+    /**
+     * 层内 uv 起点 u（左下角）。
+     */
     private final float u0;
 
-    /** 层内 uv 起点 v（左下角）。 */
+    /**
+     * 层内 uv 起点 v（左下角）。
+     */
     private final float v0;
 
     // ═══════════════════════════════════════════════
@@ -43,10 +51,10 @@ public final class GLTileDescriptor {
                              float u0, float v0) {
         this.unit = unit;
 
-        this.layer    = layer;
+        this.layer = layer;
         this.tileSize = tileSize;
-        this.u0       = u0;
-        this.v0       = v0;
+        this.u0 = u0;
+        this.v0 = v0;
     }
 
     // ═══════════════════════════════════════════════
@@ -72,10 +80,21 @@ public final class GLTileDescriptor {
     // 访问器
     // ═══════════════════════════════════════════════
 
-    public int   getLayer()    { return layer; }
-    public int   getTileSize() { return tileSize; }
-    public float getU0()       { return u0; }
-    public float getV0()       { return v0; }
+    public int getLayer() {
+        return layer;
+    }
+
+    public int getTileSize() {
+        return tileSize;
+    }
+
+    public float getU0() {
+        return u0;
+    }
+
+    public float getV0() {
+        return v0;
+    }
 
     // ═══════════════════════════════════════════════
     // Object

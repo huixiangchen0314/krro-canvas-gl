@@ -33,10 +33,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class ExecutorHolder implements AutoCloseable {
 
-    /** 全局递增序号——保证不同实例的线程名唯一。 */
+    /**
+     * 全局递增序号——保证不同实例的线程名唯一。
+     */
     private static final AtomicInteger INSTANCE_SEQ = new AtomicInteger();
 
-    /** close 时等待任务完成的最长秒数；超时则强制中断。 */
+    /**
+     * close 时等待任务完成的最长秒数；超时则强制中断。
+     */
     private static final long SHUTDOWN_TIMEOUT_SECONDS = 5L;
 
     private final ExecutorService executor;
@@ -58,6 +62,22 @@ public final class ExecutorHolder implements AutoCloseable {
         this.executor = create(threadName);
     }
 
+    private static ExecutorService create(String baseName) {
+        ThreadFactory tf = new ThreadFactory() {
+            private final AtomicInteger seq = new AtomicInteger();
+
+            @Override
+            public Thread newThread(Runnable r) {
+                int n = seq.incrementAndGet();
+                String name = (n == 1) ? baseName : baseName + "-" + n;
+                Thread t = new Thread(r, name);
+                t.setDaemon(true);
+                return t;
+            }
+        };
+        return Executors.newSingleThreadExecutor(tf);
+    }
+
     /**
      * 返回持有的执行器。任意线程可调。
      *
@@ -72,15 +92,23 @@ public final class ExecutorHolder implements AutoCloseable {
         return executor;
     }
 
-    /** 本实例持有的线程名。 */
+    /**
+     * 本实例持有的线程名。
+     */
     public String getThreadName() {
         return threadName;
     }
 
-    /** 是否已经关闭。 */
+    /**
+     * 是否已经关闭。
+     */
     public boolean isClosed() {
         return closed;
     }
+
+    // ═══════════════════════════════════════════════
+    // 内部
+    // ═══════════════════════════════════════════════
 
     /**
      * 关闭执行器。幂等。
@@ -109,25 +137,5 @@ public final class ExecutorHolder implements AutoCloseable {
             executor.shutdownNow();
             Thread.currentThread().interrupt();
         }
-    }
-
-    // ═══════════════════════════════════════════════
-    // 内部
-    // ═══════════════════════════════════════════════
-
-    private static ExecutorService create(String baseName) {
-        ThreadFactory tf = new ThreadFactory() {
-            private final AtomicInteger seq = new AtomicInteger();
-
-            @Override
-            public Thread newThread(Runnable r) {
-                int n = seq.incrementAndGet();
-                String name = (n == 1) ? baseName : baseName + "-" + n;
-                Thread t = new Thread(r, name);
-                t.setDaemon(true);
-                return t;
-            }
-        };
-        return Executors.newSingleThreadExecutor(tf);
     }
 }

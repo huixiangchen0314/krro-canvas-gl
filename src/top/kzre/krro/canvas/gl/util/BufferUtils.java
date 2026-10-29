@@ -9,8 +9,6 @@ import java.nio.ByteBuffer;
  */
 public final class BufferUtils {
 
-    private BufferUtils() {}
-
     /**
      * 每线程复用的行翻转中转缓冲。
      *
@@ -21,6 +19,9 @@ public final class BufferUtils {
      * 行宽时重新分配更大的数组。稳态下一次分配、终身复用。
      */
     private static final ThreadLocal<byte[]> FLIP_TMP = new ThreadLocal<>();
+
+    private BufferUtils() {
+    }
 
     /**
      * 按行倒序翻转一个字节缓冲区的行序。

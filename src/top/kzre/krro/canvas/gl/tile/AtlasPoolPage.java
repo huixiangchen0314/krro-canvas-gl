@@ -97,6 +97,8 @@ public interface AtlasPoolPage {
      */
     boolean allocateAt(TextureTileSlot slot, TileRef ref);
 
+    void close();
+
     /**
      * 把瓦片分配到任意一个有空闲槽位的 atlas——不指定具体位置。
      *
@@ -122,7 +124,7 @@ public interface AtlasPoolPage {
      *
      * @param ref 瓦片引用，非 null
      * @return true 表示换入成功；false 表示所有 atlas 均已满，
-     *         无法分配
+     * 无法分配
      * @throws NullPointerException ref 为 null
      */
     boolean allocate(TileRef ref);
@@ -184,7 +186,7 @@ public interface AtlasPoolPage {
      * </ul>
      * 调用方拿到后可以直接调用
      * {@code atlas.uploadLayers(start, count)} 一次性上传。
-
+     *
      * <p>返回 {@code null} 表示一个整层都未能分配——全部瓦片写入
      * {@code restTiles}。
      *
@@ -203,8 +205,8 @@ public interface AtlasPoolPage {
      * @param restTiles 未分配的尾部瓦片将按原顺序追加到此列表；
      *                  调用方预先提供（可以是空列表）；非 null
      * @return 分配的层范围 {@code (startLayer, count)}；
-     *         一个整层都未分配时返回 {@code null}
-     * @throws NullPointerException tiles 或 restTiles 为 null
+     * 一个整层都未分配时返回 {@code null}
+     * @throws NullPointerException     tiles 或 restTiles 为 null
      * @throws IllegalArgumentException tiles 为空
      */
     AtlasLayerRange allocateContinuously(List<TileRef> tiles, List<TileRef> restTiles);

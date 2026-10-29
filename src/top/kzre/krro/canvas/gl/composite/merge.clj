@@ -1,14 +1,12 @@
 (ns top.kzre.krro.canvas.gl.composite.merge
   "合并的GPU注册注册函数。先把画布转光栅图层后转发到 render-batch"
   (:require
-   [taoensso.timbre :as log]
-   [top.kzre.krro.canvas.core.layer.render.batch :as batch]
-   [top.kzre.krro.canvas.core.layer.render.download :as download]
-   [top.kzre.krro.canvas.gl.composite.render]
-   [top.kzre.krro.core.util.promise :as promise])
+    [top.kzre.krro.canvas.core.layer.render.batch :as batch]
+    [top.kzre.krro.canvas.gl.composite.render]
+    [top.kzre.krro.core.util.promise :as promise])
   (:import
-   [top.kzre.krro.util.math KMath]
-   (top.kzre.krro.util.tile TiledCanvas)))
+    (top.kzre.krro.util.math KMath)
+    (top.kzre.krro.util.tile TiledCanvas)))
 
 (defonce ^:private gl-merge-layers-fn*
          (fn [layers ^TiledCanvas backdrop

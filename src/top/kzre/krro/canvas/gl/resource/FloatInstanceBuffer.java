@@ -103,7 +103,7 @@ public final class FloatInstanceBuffer {
      *
      * @param baseLocation 第一个 attribute 的 location，必须 ≥ 0
      * @return 本次占用的 location 数，调用方可用它继续分配下一个 buffer
-     *         的 baseLocation
+     * 的 baseLocation
      * @throws IllegalArgumentException baseLocation &lt; 0
      * @throws IllegalStateException    核心已关闭
      */
@@ -115,15 +115,15 @@ public final class FloatInstanceBuffer {
 
         List<GLInstanceBuffer.Attribute> attrs = new ArrayList<>();
         int offsetFloats = 0;
-        int remaining    = strideFloats;
-        int loc          = baseLocation;
+        int remaining = strideFloats;
+        int loc = baseLocation;
         while (remaining > 0) {
             int comps = Math.min(remaining, 4);
             attrs.add(new GLInstanceBuffer.Attribute(
                     loc, comps, GL_FLOAT,
                     offsetFloats * Float.BYTES, false, 1));
             offsetFloats += comps;
-            remaining    -= comps;
+            remaining -= comps;
             loc++;
         }
         inner.bind(attrs);
@@ -177,23 +177,43 @@ public final class FloatInstanceBuffer {
      * 底层核心。视图不拥有核心——调用方持有核心的所有权，通常
      * 由池管理（借出 / 归还）。
      */
-    public GLInstanceBuffer buffer()  { return inner; }
+    public GLInstanceBuffer buffer() {
+        return inner;
+    }
 
-    /** 每实例 float 数。 */
-    public int getStrideFloats()      { return strideFloats; }
+    /**
+     * 每实例 float 数。
+     */
+    public int getStrideFloats() {
+        return strideFloats;
+    }
 
-    /** 每实例字节数（透传核心）。 */
-    public int getStrideBytes()       { return inner.getStrideBytes(); }
+    /**
+     * 每实例字节数（透传核心）。
+     */
+    public int getStrideBytes() {
+        return inner.getStrideBytes();
+    }
 
-    /** 实例容量（透传核心）。 */
-    public int getCapacityInstances() { return inner.getCapacityInstances(); }
+    /**
+     * 实例容量（透传核心）。
+     */
+    public int getCapacityInstances() {
+        return inner.getCapacityInstances();
+    }
 
-    /** 核心的 VBO 句柄（透传，调试用）。 */
-    public int getVbo()               { return inner.getVbo(); }
+    /**
+     * 核心的 VBO 句柄（透传，调试用）。
+     */
+    public int getVbo() {
+        return inner.getVbo();
+    }
 
     /**
      * 核心是否已释放。视图不释放核心，但可查询状态。
      * 可被任意线程读——透传核心的 {@code volatile closed}。
      */
-    public boolean isClosed()         { return inner.isClosed(); }
+    public boolean isClosed() {
+        return inner.isClosed();
+    }
 }

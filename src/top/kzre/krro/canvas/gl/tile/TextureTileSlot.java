@@ -41,13 +41,19 @@ public final class TextureTileSlot {
      * 纹理单元
      */
     private final int unit;
-    /** texture array 层索引。 */
+    /**
+     * texture array 层索引。
+     */
     private final int layer;
 
-    /** 层内行——atlas 槽位网格的第几行。无方向语义。 */
+    /**
+     * 层内行——atlas 槽位网格的第几行。无方向语义。
+     */
     private final int dataRow;
 
-    /** 层内列——atlas 槽位网格的第几列。无方向语义。 */
+    /**
+     * 层内列——atlas 槽位网格的第几列。无方向语义。
+     */
     private final int dataColumn;
 
     public TextureTileSlot(int unit, int layer, int dataRow, int dataColumn) {
@@ -57,10 +63,21 @@ public final class TextureTileSlot {
         this.dataColumn = dataColumn;
     }
 
-    public int getUnit()  { return unit; }
-    public int getLayer() { return layer; }
-    public int getDataRow()   { return dataRow; }
-    public int getDataColumn()   { return dataColumn; }
+    public int getUnit() {
+        return unit;
+    }
+
+    public int getLayer() {
+        return layer;
+    }
+
+    public int getDataRow() {
+        return dataRow;
+    }
+
+    public int getDataColumn() {
+        return dataColumn;
+    }
 
     // ═══════════════════════════════════════════════
     // Object

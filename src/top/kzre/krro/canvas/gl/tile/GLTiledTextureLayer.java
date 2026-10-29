@@ -1,7 +1,6 @@
 package top.kzre.krro.canvas.gl.tile;
 
 import top.kzre.krro.canvas.gl.resource.GLTexture;
-import top.kzre.krro.core.util.AsyncExecutor;
 import top.kzre.krro.core.util.SerialExecutor;
 
 /**
@@ -22,8 +21,8 @@ import top.kzre.krro.core.util.SerialExecutor;
  */
 public final class GLTiledTextureLayer extends AbstractGLTiledTexture {
 
-    private final int      layerOffset;
-    private final int      layerCount;
+    private final int layerOffset;
+    private final int layerCount;
     private final Runnable onReleased;
 
     /**
@@ -55,8 +54,8 @@ public final class GLTiledTextureLayer extends AbstractGLTiledTexture {
         }
 
         this.layerOffset = layerOffset;
-        this.layerCount  = layerCount;
-        this.onReleased  = onReleased;
+        this.layerCount = layerCount;
+        this.onReleased = onReleased;
 
         populateCanvas(layerOffset, layerCount);
     }
@@ -67,9 +66,17 @@ public final class GLTiledTextureLayer extends AbstractGLTiledTexture {
         onReleased.run();
     }
 
-    /** 起始层（含）。 */
-    public int getLayerOffset() { return layerOffset; }
+    /**
+     * 起始层（含）。
+     */
+    public int getLayerOffset() {
+        return layerOffset;
+    }
 
-    /** 借用层数。 */
-    public int getLayerCount() { return layerCount; }
+    /**
+     * 借用层数。
+     */
+    public int getLayerCount() {
+        return layerCount;
+    }
 }

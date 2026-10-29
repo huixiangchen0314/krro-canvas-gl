@@ -1,7 +1,5 @@
 package top.kzre.krro.canvas.gl.util;
 
-import java.util.Arrays;
-
 /**
  * 资源关闭工具。批量关闭多个 {@link AutoCloseable}，把所有关闭
  * 异常延迟到全部关闭完成后再统一抛出。
@@ -36,7 +34,8 @@ import java.util.Arrays;
  */
 public final class ResourceUtils {
 
-    private ResourceUtils() {}
+    private ResourceUtils() {
+    }
 
     /**
      * 关闭一组资源。所有资源都会被尝试关闭，即便前面的关闭抛异常。
@@ -158,13 +157,15 @@ public final class ResourceUtils {
             return null;
         }
         if (t instanceof RuntimeException) return (RuntimeException) t;
-        if (t instanceof Error){
+        if (t instanceof Error) {
             throw (Error) t;
         }
         return new RuntimeException(t);
     }
 
-    /** 累积异常：首个作为主异常，后续作为 suppressed。 */
+    /**
+     * 累积异常：首个作为主异常，后续作为 suppressed。
+     */
     public static Throwable accumulateException(Throwable first,
                                                 Throwable next) {
         if (next == null) return first;

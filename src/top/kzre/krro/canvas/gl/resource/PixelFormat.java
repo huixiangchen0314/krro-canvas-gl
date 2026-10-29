@@ -33,7 +33,7 @@ public final class PixelFormat {
             new PixelFormat(GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT);
 
     /**
-     *  RGBA 32 位浮点/通道，每像素 16 字节。
+     * RGBA 32 位浮点/通道，每像素 16 字节。
      */
     public static final PixelFormat RGBA32F =
             new PixelFormat(GL_RGBA32F, GL_RGBA, GL_FLOAT);
@@ -56,18 +56,30 @@ public final class PixelFormat {
 
     PixelFormat(int glInternalFormat, int glClientFormat, int glType) {
         this.glInternalFormat = glInternalFormat;
-        this.glClientFormat   = glClientFormat;
-        this.glType           = glType;
+        this.glClientFormat = glClientFormat;
+        this.glType = glType;
     }
 
-    /** 纹理内部格式，用于 {@code glTexImage3D} / {@code glTexStorage3D}。 */
-    public int getGlInternalFormat() { return glInternalFormat; }
+    /**
+     * 纹理内部格式，用于 {@code glTexImage3D} / {@code glTexStorage3D}。
+     */
+    public int getGlInternalFormat() {
+        return glInternalFormat;
+    }
 
-    /** 客户端格式，用于 {@code glTexSubImage3D} / {@code glGetTexImage}。 */
-    public int getGlClientFormat() { return glClientFormat; }
+    /**
+     * 客户端格式，用于 {@code glTexSubImage3D} / {@code glGetTexImage}。
+     */
+    public int getGlClientFormat() {
+        return glClientFormat;
+    }
 
-    /** 客户端类型，用于 {@code glTexSubImage3D} / {@code glGetTexImage}。 */
-    public int getGlType() { return glType; }
+    /**
+     * 客户端类型，用于 {@code glTexSubImage3D} / {@code glGetTexImage}。
+     */
+    public int getGlType() {
+        return glType;
+    }
 
     /**
      * 每像素字节数。由 {@code glInternalFormat} 派生。
@@ -76,11 +88,16 @@ public final class PixelFormat {
      */
     public int internalBytesPerPixel() {
         switch (glInternalFormat) {
-            case GL_RGBA8:   return 4;
-            case GL_RGBA16F: return 8;
-            case GL_RGBA32F: return 16;
-            case GL_R8:      return 1;
-            case GL_R32F:    return 4;
+            case GL_RGBA8:
+                return 4;
+            case GL_RGBA16F:
+                return 8;
+            case GL_RGBA32F:
+                return 16;
+            case GL_R8:
+                return 1;
+            case GL_R32F:
+                return 4;
             default:
                 throw new IllegalStateException(
                         "unknown internal format: 0x"

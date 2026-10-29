@@ -30,26 +30,24 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
 
     private final FixedSizeTexturePool texturePool;
 
-    /** 已创建的 slot。随 acquire/release 动态增减。 */
+    /**
+     * 已创建的 slot。随 acquire/release 动态增减。
+     */
     private final List<TextureSlot> slots = new ArrayList<>();
-
+    private final Object lock = new Object();
+    /**
+     * 持久保存的 fbo 数量
+     */
+    private final int capacity;
+    /**
+     * 持久保存的 slot, 每个slot是一张纹理
+     */
+    private final int slotCapacity;
     /**
      * 延迟关闭器。close 时若仍有 FBO 借出——此字段非 null，
      * 全部归还后触发实际释放并置回 null。
      */
     private DeferredClose deferredClose = null;
-
-    private final Object lock = new Object();
-
-    /**
-     * 持久保存的 fbo 数量
-     */
-    private final int capacity;
-
-    /**
-     * 持久保存的 slot, 每个slot是一张纹理
-     */
-    private final int slotCapacity;
 
     /**
      * 装饰 texturePool。
@@ -176,7 +174,7 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
                                 + "call ensureSlotsWithIdleAtLeastExcluding(2, 1, excluded) first");
             }
 
-            return new GLFramebuffer[]{ a, b };
+            return new GLFramebuffer[]{a, b};
         }
     }
 
@@ -284,7 +282,7 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
             }
 
             immediate = new ArrayList<>();
-            pending  = new ArrayList<>();
+            pending = new ArrayList<>();
             for (TextureSlot slot : slots) {
                 if (slot.isFullyIdle()) {
                     immediate.add(slot);
@@ -321,7 +319,7 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
     private void releaseSlots(List<TextureSlot> toRelease) {
         if (toRelease.isEmpty()) return;
         Throwable t = null;
-        try{
+        try {
             ExecutorUtils.runOnThread(getGlExecutor(), () ->
             {
                 RuntimeException reeaseError = ResourceUtils.closeDelayError(toRelease);
@@ -329,7 +327,7 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
                     throw reeaseError;
                 }
             });
-        }catch (Throwable e){
+        } catch (Throwable e) {
             t = e;
         }
 
@@ -358,7 +356,9 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
     // 状态
     // ═══════════════════════════════════════════════
 
-    /** 已创建的 slot 数。 */
+    /**
+     * 已创建的 slot 数。
+     */
     public int getSlotCount() {
         synchronized (lock) {
             return slots.size();
@@ -444,7 +444,9 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
         return texturePool.getGlExecutor();
     }
 
-    /** 必须在 {@link #lock} 内调用。 */
+    /**
+     * 必须在 {@link #lock} 内调用。
+     */
     private void requireNotClosing() {
         if (deferredClose != null) {
             throw new IllegalStateException("pool is closing");
@@ -479,7 +481,9 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
             return remaining == 0;
         }
 
-        /** 判断 framebuffer 是否属于接管的 slot 之一。在 {@code lock} 内调用。 */
+        /**
+         * 判断 framebuffer 是否属于接管的 slot 之一。在 {@code lock} 内调用。
+         */
         boolean owns(GLFramebuffer fb) {
             for (TextureSlot slot : pendingSlots) {
                 if (slot.owns(fb)) return true;
@@ -497,6 +501,7 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
         private final List<GLFramebuffer> fbos;
         private final Deque<GLFramebuffer> idle;
         private final int capacity;
+
         private TextureSlot(GLTexture texture,
                             List<GLFramebuffer> fbos,
                             Deque<GLFramebuffer> idle) {
@@ -515,7 +520,9 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
             return new TextureSlot(texture, list, new ArrayDeque<>(list));
         }
 
-        GLTexture texture() { return texture; }
+        GLTexture texture() {
+            return texture;
+        }
 
         GLFramebuffer tryAcquire() {
             return idle.pollFirst();
@@ -525,12 +532,16 @@ public final class FixedSizeFrameBufferPool implements GLFrameBufferPool, AutoCl
             idle.addFirst(fbo);
         }
 
-        /** 全部 FBO 都空闲。 */
+        /**
+         * 全部 FBO 都空闲。
+         */
         boolean isFullyIdle() {
             return idle.size() == capacity;
         }
 
-        /** 借出中的 FBO 数。 */
+        /**
+         * 借出中的 FBO 数。
+         */
         int outstanding() {
             return capacity - idle.size();
         }

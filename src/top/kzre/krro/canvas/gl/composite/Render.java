@@ -1,6 +1,9 @@
 package top.kzre.krro.canvas.gl.composite;
 
-import top.kzre.krro.canvas.gl.resource.*;
+import top.kzre.krro.canvas.gl.resource.FixedSizeFrameBufferPool;
+import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
+import top.kzre.krro.canvas.gl.resource.GLTexture;
+import top.kzre.krro.canvas.gl.tile.FBOUtils;
 import top.kzre.krro.canvas.gl.util.ExecutorUtils;
 import top.kzre.krro.canvas.gl.util.Tuple4f;
 import top.kzre.krro.core.util.SerialExecutor;
@@ -27,7 +30,8 @@ import java.util.concurrent.CompletableFuture;
  */
 public final class Render {
 
-    private Render() {}
+    private Render() {
+    }
 
     public static CompletableFuture<TiledCanvas> render(
             List<ILayer> layers,
@@ -47,6 +51,14 @@ public final class Render {
         }
         if (dirtyTiles == null) {
             throw new IllegalArgumentException("dirtyTiles must not be null");
+        }
+        if (ctx.getGlExecutor() == null) {
+            throw new IllegalArgumentException("glExecutor must not be null");
+        }
+        if (Thread.currentThread().getId() == ctx.getGlExecutor().getThreadId()) {
+            throw new IllegalStateException(
+                    "Render.render must not be called on the GL thread — "
+                            + "it would deadlock: the scheduled GL task can never run");
         }
 
         long tStart = System.nanoTime();
@@ -81,7 +93,7 @@ public final class Render {
                             long tAcquire = System.nanoTime();
                             return planAndSubmit(
                                     pair, layers, ctx, imageAABB, dirtyTiles,
-                                    fboPool, glExecutor,  tileSize,
+                                    fboPool, glExecutor, tileSize,
                                     tStart, tCollect, tAcquire);
                         },
                         PlanExecutor.get());
@@ -151,9 +163,9 @@ public final class Render {
         System.out.println("[render-timing " + tag + "]"
                 + " collect=" + ms(tCollect - tStart) + "ms"
                 + " acquire=" + ms(tAcquire - tCollect) + "ms"
-                + " plan="    + ms(tPlan - tAcquire) + "ms"
-                + " exec="    + ms(tExec - tPlan) + "ms"
-                + " wrap="    + ms(tWrap - tExec) + "ms"
+                + " plan=" + ms(tPlan - tAcquire) + "ms"
+                + " exec=" + ms(tExec - tPlan) + "ms"
+                + " wrap=" + ms(tWrap - tExec) + "ms"
                 + " | total=" + ms(tWrap - tStart) + "ms");
     }
 

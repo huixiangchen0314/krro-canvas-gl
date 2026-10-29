@@ -31,19 +31,26 @@ import static org.lwjgl.opengl.GL30.*;
  */
 public final class PixelCodec {
 
-    private PixelCodec() {}
+    private PixelCodec() {
+    }
 
     // ═══════════════════════════════════════════════
     // 计量
     // ═══════════════════════════════════════════════
 
-    /** 每像素通道数，由 {@code glClientFormat} 推导。 */
+    /**
+     * 每像素通道数，由 {@code glClientFormat} 推导。
+     */
     public static int channels(PixelFormat fmt) {
         switch (fmt.getGlClientFormat()) {
-            case GL_RED:  return 1;
-            case GL_RG:   return 2;
-            case GL_RGB:  return 3;
-            case GL_RGBA: return 4;
+            case GL_RED:
+                return 1;
+            case GL_RG:
+                return 2;
+            case GL_RGB:
+                return 3;
+            case GL_RGBA:
+                return 4;
             default:
                 throw new IllegalStateException(
                         "unknown client format: 0x"
@@ -51,12 +58,16 @@ public final class PixelCodec {
         }
     }
 
-    /** CPU 侧需要的 float 数量。 */
+    /**
+     * CPU 侧需要的 float 数量。
+     */
     public static int cpuFloats(PixelFormat fmt, int pixelCount) {
         return pixelCount * channels(fmt);
     }
 
-    /** GPU 侧占用的字节数。 */
+    /**
+     * GPU 侧占用的字节数。
+     */
     public static int gpuBytes(PixelFormat fmt, int pixelCount) {
         return pixelCount * fmt.internalBytesPerPixel();
     }
@@ -72,13 +83,13 @@ public final class PixelCodec {
      * 写 {@code dst} 的 {@code gpuBytes(fmt, pixelCount)} 个字节。
      * 两个 buffer 的 position 都会前进相应数量。
      *
-     * @throws IllegalArgumentException buffer 剩余空间不足
+     * @throws IllegalArgumentException      buffer 剩余空间不足
      * @throws UnsupportedOperationException 格式无打包实现
      */
     public static void pack(PixelFormat fmt, FloatBuffer src, int pixelCount,
                             ByteBuffer dst) {
         int needFloats = cpuFloats(fmt, pixelCount);
-        int needBytes  = gpuBytes(fmt, pixelCount);
+        int needBytes = gpuBytes(fmt, pixelCount);
         checkRoom(src.remaining() >= needFloats,
                 "src", src.remaining(), needFloats, "floats");
         checkRoom(dst.remaining() >= needBytes,
@@ -87,11 +98,21 @@ public final class PixelCodec {
         ByteBuffer out = ensureNativeOrder(dst);
 
         switch (fmt.getGlInternalFormat()) {
-            case GL_RGBA8:   packRgba8(src, pixelCount, out);   break;
-            case GL_R8:      packR8(src, pixelCount, out);      break;
-            case GL_R32F:    packR32f(src, pixelCount, out);    break;
-            case GL_RGBA32F: packRgba32f(src, pixelCount, out); break;
-            case GL_RGBA16F: packRgba16f(src, pixelCount, out); break;
+            case GL_RGBA8:
+                packRgba8(src, pixelCount, out);
+                break;
+            case GL_R8:
+                packR8(src, pixelCount, out);
+                break;
+            case GL_R32F:
+                packR32f(src, pixelCount, out);
+                break;
+            case GL_RGBA32F:
+                packRgba32f(src, pixelCount, out);
+                break;
+            case GL_RGBA16F:
+                packRgba16f(src, pixelCount, out);
+                break;
             default:
                 throw new UnsupportedOperationException(
                         "pack not supported for format: " + fmt);
@@ -113,13 +134,13 @@ public final class PixelCodec {
      * <p><b>4 通道限制</b>：仅 RGBA 格式有效。R/RG/RGB 无 alpha
      * 通道，退化为普通 {@link #pack}。
      *
-     * @throws IllegalArgumentException buffer 剩余空间不足
+     * @throws IllegalArgumentException      buffer 剩余空间不足
      * @throws UnsupportedOperationException 格式无打包实现
      */
     public static void packPreAlpha(PixelFormat fmt, FloatBuffer src, int pixelCount,
                                     ByteBuffer dst) {
         int needFloats = cpuFloats(fmt, pixelCount);
-        int needBytes  = gpuBytes(fmt, pixelCount);
+        int needBytes = gpuBytes(fmt, pixelCount);
         checkRoom(src.remaining() >= needFloats,
                 "src", src.remaining(), needFloats, "floats");
         checkRoom(dst.remaining() >= needBytes,
@@ -128,11 +149,21 @@ public final class PixelCodec {
         ByteBuffer out = ensureNativeOrder(dst);
 
         switch (fmt.getGlInternalFormat()) {
-            case GL_RGBA8:   packRgba8PreAlpha(src, pixelCount, out);   break;
-            case GL_R8:      packR8(src, pixelCount, out);              break;
-            case GL_R32F:    packR32f(src, pixelCount, out);            break;
-            case GL_RGBA32F: packRgba32fPreAlpha(src, pixelCount, out); break;
-            case GL_RGBA16F: packRgba16fPreAlpha(src, pixelCount, out); break;
+            case GL_RGBA8:
+                packRgba8PreAlpha(src, pixelCount, out);
+                break;
+            case GL_R8:
+                packR8(src, pixelCount, out);
+                break;
+            case GL_R32F:
+                packR32f(src, pixelCount, out);
+                break;
+            case GL_RGBA32F:
+                packRgba32fPreAlpha(src, pixelCount, out);
+                break;
+            case GL_RGBA16F:
+                packRgba16fPreAlpha(src, pixelCount, out);
+                break;
             default:
                 throw new UnsupportedOperationException(
                         "pack not supported for format: " + fmt);
@@ -151,7 +182,7 @@ public final class PixelCodec {
     public static void unpack(PixelFormat fmt, ByteBuffer src, int pixelCount,
                               FloatBuffer dst) {
         int needFloats = cpuFloats(fmt, pixelCount);
-        int needBytes  = gpuBytes(fmt, pixelCount);
+        int needBytes = gpuBytes(fmt, pixelCount);
         checkRoom(src.remaining() >= needBytes,
                 "src", src.remaining(), needBytes, "bytes");
         checkRoom(dst.remaining() >= needFloats,
@@ -160,11 +191,21 @@ public final class PixelCodec {
         ByteBuffer in = ensureNativeOrder(src);
 
         switch (fmt.getGlInternalFormat()) {
-            case GL_RGBA8:   unpackRgba8(in, pixelCount, dst);   break;
-            case GL_R8:      unpackR8(in, pixelCount, dst);      break;
-            case GL_R32F:    unpackR32f(in, pixelCount, dst);    break;
-            case GL_RGBA32F: unpackRgba32f(in, pixelCount, dst); break;
-            case GL_RGBA16F: unpackRgba16f(in, pixelCount, dst); break;
+            case GL_RGBA8:
+                unpackRgba8(in, pixelCount, dst);
+                break;
+            case GL_R8:
+                unpackR8(in, pixelCount, dst);
+                break;
+            case GL_R32F:
+                unpackR32f(in, pixelCount, dst);
+                break;
+            case GL_RGBA32F:
+                unpackRgba32f(in, pixelCount, dst);
+                break;
+            case GL_RGBA16F:
+                unpackRgba16f(in, pixelCount, dst);
+                break;
             default:
                 throw new UnsupportedOperationException(
                         "unpack not supported for format: " + fmt);
@@ -188,13 +229,13 @@ public final class PixelCodec {
      * <p><b>4 通道限制</b>：仅 RGBA 格式有效。其余格式退化为普通
      * {@link #unpack}。
      *
-     * @throws IllegalArgumentException buffer 剩余空间不足
+     * @throws IllegalArgumentException      buffer 剩余空间不足
      * @throws UnsupportedOperationException 格式无解包实现
      */
     public static void unpackPreAlpha(PixelFormat fmt, ByteBuffer src, int pixelCount,
                                       FloatBuffer dst) {
         int needFloats = cpuFloats(fmt, pixelCount);
-        int needBytes  = gpuBytes(fmt, pixelCount);
+        int needBytes = gpuBytes(fmt, pixelCount);
         checkRoom(src.remaining() >= needBytes,
                 "src", src.remaining(), needBytes, "bytes");
         checkRoom(dst.remaining() >= needFloats,
@@ -203,11 +244,21 @@ public final class PixelCodec {
         ByteBuffer in = ensureNativeOrder(src);
 
         switch (fmt.getGlInternalFormat()) {
-            case GL_RGBA8:   unpackRgba8PreAlpha(in, pixelCount, dst);   break;
-            case GL_R8:      unpackR8(in, pixelCount, dst);              break;
-            case GL_R32F:    unpackR32f(in, pixelCount, dst);            break;
-            case GL_RGBA32F: unpackRgba32fPreAlpha(in, pixelCount, dst); break;
-            case GL_RGBA16F: unpackRgba16fPreAlpha(in, pixelCount, dst); break;
+            case GL_RGBA8:
+                unpackRgba8PreAlpha(in, pixelCount, dst);
+                break;
+            case GL_R8:
+                unpackR8(in, pixelCount, dst);
+                break;
+            case GL_R32F:
+                unpackR32f(in, pixelCount, dst);
+                break;
+            case GL_RGBA32F:
+                unpackRgba32fPreAlpha(in, pixelCount, dst);
+                break;
+            case GL_RGBA16F:
+                unpackRgba16fPreAlpha(in, pixelCount, dst);
+                break;
             default:
                 throw new UnsupportedOperationException(
                         "unpack not supported for format: " + fmt);
@@ -290,7 +341,9 @@ public final class PixelCodec {
     // 各格式实现——预乘路径
     // ═══════════════════════════════════════════════
 
-    /** 打包 + 预乘。逐像素 {@code rgb *= a} 后写入。 */
+    /**
+     * 打包 + 预乘。逐像素 {@code rgb *= a} 后写入。
+     */
     private static void packRgba8PreAlpha(FloatBuffer src, int n, ByteBuffer dst) {
         for (int i = 0; i < n; i++) {
             float r = src.get();
@@ -304,7 +357,9 @@ public final class PixelCodec {
         }
     }
 
-    /** 解包 + 反预乘。逐像素 {@code rgb /= a} 后写入。 */
+    /**
+     * 解包 + 反预乘。逐像素 {@code rgb /= a} 后写入。
+     */
     private static void unpackRgba8PreAlpha(ByteBuffer src, int n, FloatBuffer dst) {
         for (int i = 0; i < n; i++) {
             float r = ByteUtils.toFloat8(src.get());
@@ -390,8 +445,6 @@ public final class PixelCodec {
             dst.put(a);
         }
     }
-
-
 
 
     // ═══════════════════════════════════════════════

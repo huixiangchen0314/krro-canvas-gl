@@ -29,20 +29,32 @@ public final class ShaderPackedBuffer {
      *
      * <p>调用方视为只读——不得修改返回数组。
      */
-    public float[] getLayerTable() { return layerTable; }
+    public float[] getLayerTable() {
+        return layerTable;
+    }
 
-    /** 图层表条目数（= layerTable.length / 8）。 */
-    public int getLayerEntryCount() { return layerEntryCount; }
+    /**
+     * 图层表条目数（= layerTable.length / 8）。
+     */
+    public int getLayerEntryCount() {
+        return layerEntryCount;
+    }
 
     /**
      * 瓦片表。每瓦片 8 float，构成 2 个 vec4。
      *
      * <p>调用方视为只读——不得修改返回数组。
      */
-    public float[] getTileTable() { return tileTable; }
+    public float[] getTileTable() {
+        return tileTable;
+    }
 
-    /** 瓦片表条目数（= tileTable.length / 8）。 */
-    public int getTileEntryCount() { return tileEntryCount; }
+    /**
+     * 瓦片表条目数（= tileTable.length / 8）。
+     */
+    public int getTileEntryCount() {
+        return tileEntryCount;
+    }
 
     /**
      * 每个屏幕瓦片在 indexList 中的起始下标。
@@ -50,7 +62,9 @@ public final class ShaderPackedBuffer {
      *
      * <p>调用方视为只读——不得修改返回数组。
      */
-    public int[] getOffsets() { return offsets; }
+    public int[] getOffsets() {
+        return offsets;
+    }
 
     /**
      * 每个屏幕瓦片覆盖的瓦片数。{@code counts[i] == 0} 表示
@@ -58,17 +72,25 @@ public final class ShaderPackedBuffer {
      *
      * <p>调用方视为只读——不得修改返回数组。
      */
-    public int[] getCounts() { return counts; }
+    public int[] getCounts() {
+        return counts;
+    }
 
     /**
      * 索引表。按屏幕瓦片顺序拼接，每元素指向 tileTable 中的条目下标。
      *
      * <p>调用方视为只读——不得修改返回数组。
      */
-    public int[] getIndexList() { return indexList; }
+    public int[] getIndexList() {
+        return indexList;
+    }
 
-    /** 索引总数（= indexList.length）。 */
-    public int getIndexCount() { return indexCount; }
+    /**
+     * 索引总数（= indexList.length）。
+     */
+    public int getIndexCount() {
+        return indexCount;
+    }
 
     @Override
     public String toString() {

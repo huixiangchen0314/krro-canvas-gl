@@ -1,7 +1,6 @@
 package top.kzre.krro.canvas.gl.composite;
 
 import top.kzre.krro.canvas.gl.resource.*;
-import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
 import top.kzre.krro.canvas.gl.tile.GLAtlasPool;
 import top.kzre.krro.canvas.gl.util.ExecutorUtils;
 import top.kzre.krro.canvas.gl.util.NumberUtils;
@@ -11,21 +10,20 @@ import top.kzre.krro.util.tile.TiledCanvas;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * GL 合成上下文。上层持有，管理跨任务复用的 GL 资源。
+ * GL 合成上下文——视口级。
  *
- * <p><b>持有内容</b>：
- * <ul>
- *   <li>{@code glExecutor} —— 借用，不持有所有权</li>
- *   <li>{@code atlasPool} —— 拥有，关闭时释放</li>
- *   <li>{@code viewFrameBufferPool} —— 拥有，视口尺寸绑定的
- *       ping-pong FBO 池</li>
- * </ul>
+ * <p><b>与享元的关系</b>：上下文借用 {@link GLCompositeFlyweight} 的
+ * 共享资源（quad、atlas 池、shader 缓存、空画布模板、像素格式等），
+ * 自己只持有<b>视口私有</b>资源：ping-pong FBO 池和视口尺寸。
+ * 多个视口共享同一个 flyweight，各自的 context 只在视口级不同。
  *
- * <h2>构造时的所有权转移</h2>
+ * <p><b>所有权</b>：flyweight 的所有权在外部（GL 上下文级管理器），
+ * 上下文<b>不拥有、不关闭</b> flyweight。上下文 close 只释放自己的
+ * FBO 池。
  *
- * <p>构造时 {@code atlasPool} 的所有权转移给本类。调用方不应在
- * 构造后再使用 atlasPool，也不应单独关闭它——本类的 {@link #close()}
- * 会负责。
+ * <p><b>生命周期约束</b>：flyweight 必须比所有引用它的 context 长寿。
+ * 外部管理器负责保证“先关闭所有 context，再关闭 flyweight”。违反
+ * 此约束时，context 的操作会因 flyweight 已关闭而抛异常。
  *
  * <h2>线程契约</h2>
  *
@@ -37,123 +35,79 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * GL 线程执行。
  *
  * <p>访问器是纯数据读取，任意线程可读。
- *
- * <table>
- *   <caption>方法线程契约</caption>
- *   <tr><th>方法</th><th>允许的线程</th></tr>
- *   <tr><td>{@link #close()}</td><td>任意——自动调度</td></tr>
- *   <tr><td>{@link #adjustViewSize(int, int)}</td>
- *       <td>仅 GL 线程</td></tr>
- *   <tr><td>所有访问器</td><td>任意——纯读</td></tr>
- * </table>
  */
 public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
 
-    /** 借用，不持有所有权。 */
+    /**
+     * 借用的享元，不拥有。
+     */
+    private final GLCompositeFlyweight flyweight;
+
+    /**
+     * 借用，不持有所有权。
+     */
     private final SerialExecutor glExecutor;
-
-    private final GLAtlasPool atlasPool;
-    private final AtlasPoolPage atlasPoolPage;
-
     /**
-     * 本上下文共享的 quad。GL 线程首次 {@link #getQuad()} 时创建，
-     * {@link #close()} 时释放。
-     *
-     * <p>volatile 保证 close 时的可见性——创建只发生在 GL 线程，
-     * 读可能发生在任意线程（但 getQuad 仍在 GL 线程调用）。
+     * FBO 池容量，构造时固定。
      */
-    private volatile GLQuad quad;
-
-    private volatile FixedSizeFrameBufferPool viewFrameBufferPool;
+    private final int viewFboPoolCapacity;
     /**
-     * 空画布模板，用于产生空画布
+     * 关闭标记。CAS 保证重复调用被拒绝。
      */
-    private final TiledCanvas emptyCanvasTpl;
-
-    private final int tileSize;
-    private final PixelFormat pixelFormat;
-    private final NoGLTexturePool noTexPool;
-
-    /** 关闭标记。CAS 保证重复调用被拒绝。 */
     private final AtomicBoolean closed = new AtomicBoolean(false);
-
+    /**
+     * 视口私有：尺寸绑定的 ping-pong FBO 池。
+     */
+    private volatile FixedSizeFrameBufferPool viewFrameBufferPool;
     private volatile int viewWidth;
     private volatile int viewHeight;
-
-    private final CompositeGLProgramManager glProgramManager;
 
     // ═══════════════════════════════════════════════
     // 构造
     // ═══════════════════════════════════════════════
 
-    public GLCompositeContext(SerialExecutor glExecutor,
-                              GLAtlasPool atlasPool,
-                              int tileSize,
-                              int viewFboPoolCapacity,
-                              PixelFormat pixelFormat) {
-        if (glExecutor == null) {
-            throw new IllegalArgumentException("glExecutor must not be null");
-        }
-        if (atlasPool == null) {
-            throw new IllegalArgumentException("atlasPool must not be null");
-        }
-        if (tileSize <= 0) {
-            throw new IllegalArgumentException("tileSize must be > 0: " + tileSize);
+    /**
+     * @param flyweight           GL 上下文级共享资源，<b>不转移所有权</b>
+     * @param viewFboPoolCapacity 视口 ping-pong FBO 池容量，必须 &gt; 0
+     * @throws IllegalArgumentException flyweight 为 null 或容量 ≤ 0
+     * @throws IllegalStateException    flyweight 已关闭
+     */
+    public GLCompositeContext(GLCompositeFlyweight flyweight,
+                              int viewFboPoolCapacity) {
+        if (flyweight == null) {
+            throw new IllegalArgumentException("flyweight must not be null");
         }
         if (viewFboPoolCapacity <= 0) {
-            throw new IllegalArgumentException("viewFboPoolCapacity must be > 0: " + viewFboPoolCapacity);
+            throw new IllegalArgumentException(
+                    "viewFboPoolCapacity must be > 0: " + viewFboPoolCapacity);
         }
-        if (pixelFormat == null) {
-            throw new IllegalArgumentException("pixelFormat must not be null");
+        if (flyweight.isClosed()) {
+            throw new IllegalStateException("flyweight is closed");
         }
 
-        this.glExecutor      = glExecutor;
-        this.atlasPool       = atlasPool;
-        this.atlasPoolPage   = atlasPool.page();
-        this.tileSize        = tileSize;
-        this.pixelFormat = pixelFormat;
-        this.noTexPool = new NoGLTexturePool(glExecutor);
-
-        GLProgramCache programs = new GLProgramCache(glExecutor);
-        glProgramManager = new CompositeGLProgramManager(programs);
-        int channels = PixelCodec.channels(pixelFormat);
-        float[] defaultPixels = new float[channels];
-        this.emptyCanvasTpl = new TiledCanvas(tileSize, defaultPixels);
-        emptyCanvasTpl.setReadonly(true);
+        this.flyweight = flyweight;
+        this.glExecutor = flyweight.getGlExecutor();
+        this.viewFboPoolCapacity = viewFboPoolCapacity;
     }
 
+    // ═══════════════════════════════════════════════
+    // 视口级尺寸管理
+    // ═══════════════════════════════════════════════
 
     /**
      * 判断视口尺寸是否需要调整。
      *
-     * <p><b>用途</b>：调用方在提交 GL 任务前先做一次纯 CPU 判断——
-     * 尺寸未变时跳过整个调度，避免无谓的跨线程同步。
-     *
-     * <p><b>线程契约</b>：纯数据读取，任意线程可调。内部只读
-     * {@code viewWidth} / {@code viewHeight}（volatile）和常量
-     * {@code tileSize}，无 GL 调用。
-     *
-     * <p><b>竞态</b>：判断与实际 {@code adjustViewSize} 之间存在窗口期。
-     * 多线程同时调整时，判断可能过时——但 {@code adjustViewSize} 内部
-     * 会再次检查，最终行为一致。判断只是"快速路径"，不是"唯一防线"。
-     *
-     * @param width  目标视口宽（像素），未对齐
-     * @param height 目标视口高（像素），未对齐
-     * @return true 表示需要调度 {@link #adjustViewSize(int, int)}
+     * <p><b>线程契约</b>：纯数据读取，任意线程可调。
      */
     public boolean needsViewSizeAdjust(int width, int height) {
         if (width <= 0 || height <= 0) {
             return false;
         }
-        int alignedW = NumberUtils.alignUp(width,  tileSize);
+        int tileSize = flyweight.getTileSize();
+        int alignedW = NumberUtils.alignUp(width, tileSize);
         int alignedH = NumberUtils.alignUp(height, tileSize);
         return viewWidth != alignedW || viewHeight != alignedH;
     }
-
-
-    // ═══════════════════════════════════════════════
-    // GL 线程内部接口
-    // ═══════════════════════════════════════════════
 
     /**
      * 调整视口尺寸。尺寸变化时重建 FBO 池。
@@ -173,7 +127,8 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
                     "invalid viewport: " + width + "x" + height);
         }
 
-        int alignedW = NumberUtils.alignUp(width,  tileSize);
+        int tileSize = flyweight.getTileSize();
+        int alignedW = NumberUtils.alignUp(width, tileSize);
         int alignedH = NumberUtils.alignUp(height, tileSize);
 
         if (viewWidth == alignedW && viewHeight == alignedH) {
@@ -186,48 +141,56 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
         }
 
         viewFrameBufferPool = createFboPool(alignedW, alignedH);
-        viewWidth  = alignedW;
+        viewWidth = alignedW;
         viewHeight = alignedH;
     }
 
     private FixedSizeFrameBufferPool createFboPool(int width, int height) {
         FixedSizeTexturePool texturePool = new FixedSizeTexturePool(
-                12,
+                viewFboPoolCapacity,
                 width, height, 2,
-                pixelFormat,
-                noTexPool);
+                flyweight.getPixelFormat(),
+                flyweight.getNoTexPool());
         try {
             return new FixedSizeFrameBufferPool(texturePool);
         } catch (Throwable t) {
-            try { texturePool.close(); } catch (Throwable ignored) { }
+            try {
+                texturePool.close();
+            } catch (Throwable ignored) {
+            }
             throw t;
         }
     }
 
+    // ═══════════════════════════════════════════════
+    // 共享资源代理（全部转发到 flyweight）
+    // ═══════════════════════════════════════════════
+
     /**
-     * 获取本上下文的共享 {@link GLQuad}。首次调用时创建并绑定位置
-     * attribute。
+     * 共享 quad。代理到 flyweight——首次调用时 flyweight 惰性创建。
      *
-     * <p><b>线程契约</b>：必须在 GL 线程调用——涉及 GL 创建与 VAO 配置。
+     * <p><b>线程契约</b>：必须在 GL 线程调用。
      *
-     * <p><b>生命周期</b>：quad 属于本上下文，{@link #close()} 时释放。
-     * 一个 context 一个 quad——多个 context 各有自己的 quad，互不共享，
-     * 避免跨 context 使用 GL 对象。
-     *
-     * @throws IllegalStateException 非 GL 线程调用，或上下文已关闭
+     * @throws IllegalStateException 非 GL 线程、上下文已关闭、或 flyweight 已关闭
      */
     public GLQuad getQuad() {
         requireGlThread();
         if (closed.get()) {
             throw new IllegalStateException("context is closed");
         }
-        GLQuad q = quad;
-        if (q == null) {
-            q = GLQuad.create(GLQuad.Orientation.Y_DOWN);
-            q.bindPositionAttribute(ShaderConstants.ATTRIBUTE_POSITION_QUAD);
-            quad = q;
-        }
-        return q;
+        return flyweight.getQuad();
+    }
+
+    public TiledCanvas newCanvas() {
+        return flyweight.newCanvas();
+    }
+
+    public GLProgramCache getProgramCache() {
+        return flyweight.getProgramCache();
+    }
+
+    public int getMinSingleDrawnTiles() {
+        return flyweight.getMinSingleDrawnTiles();
     }
 
     // ═══════════════════════════════════════════════
@@ -238,42 +201,49 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
         return viewFrameBufferPool;
     }
 
-    public int getViewWidth()  { return viewWidth; }
-    public int getViewHeight() { return viewHeight; }
-    public int getTileSize()   { return tileSize; }
+    public int getViewWidth() {
+        return viewWidth;
+    }
+
+    public int getViewHeight() {
+        return viewHeight;
+    }
+
+    public int getTileSize() {
+        return flyweight.getTileSize();
+    }
+
+    public PixelFormat getPixelFormat() {
+        return flyweight.getPixelFormat();
+    }
 
     @Override
-    public SerialExecutor getGlExecutor() { return glExecutor; }
+    public SerialExecutor getGlExecutor() {
+        return glExecutor;
+    }
 
-    public GLAtlasPool getAtlasPool() { return atlasPool; }
-    public AtlasPoolPage getAtlasPoolPage() { return atlasPoolPage; }
+    public GLAtlasPool getAtlasPool() {
+        return flyweight.getAtlasPool();
+    }
 
-    public boolean isClosed() { return closed.get(); }
+    public boolean isClosed() {
+        return closed.get();
+    }
 
     // ═══════════════════════════════════════════════
     // 外部生命周期接口
     // ═══════════════════════════════════════════════
 
     /**
-     * 关闭上下文。释放拥有的资源：FBO 池和 atlas 池。
+     * 关闭上下文。只释放<b>视口私有</b>资源：FBO 池。
      *
-     * <p><b>唯一允许外部直接调用的方法</b>。可在任意线程调用：
-     * <ul>
-     *   <li>GL 线程 → 同步执行清理</li>
-     *   <li>非 GL 线程 → 提交到 GL 线程执行，调用方立即返回</li>
-     * </ul>
+     * <p><b>不释放共享资源</b>：flyweight 的所有权在外部，由
+     * GL 上下文级管理器统一关闭。
      *
-     * <p><b>不释放借用资源</b>：{@code glExecutor} 的所有权不在本类。
+     * <p><b>线程契约</b>：任意线程可调。GL 线程同步执行，非 GL 线程
+     * 提交到 GL 线程执行，调用方立即返回。
      *
-     * <p><b>释放顺序</b>：FBO 池 → atlas 池。FBO 池引用 atlas 的纹理，
-     * 先释放 FBO 侧避免悬挂引用。
-     *
-     * <p><b>不可重入</b>：重复调用抛异常。CAS 保证检查与标记的原子性，
-     * 并发的 close 只会有一个成功。
-     *
-     * <p><b>异步语义</b>：非 GL 线程调用时，返回不代表 GL 清理已完成，
-     * 仅代表已提交。调用方如需要保证清理完成，应在 GL 线程内调用，
-     * 或自行同步提交的任务。
+     * <p><b>不可重入</b>：重复调用抛异常。CAS 保证检查与标记的原子性。
      *
      * @throws IllegalStateException 上下文已关闭
      */
@@ -285,41 +255,15 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
         ExecutorUtils.runOnThread(glExecutor, this::doClose);
     }
 
-    /** 实际的清理动作。只在 GL 线程上执行。 */
+    /**
+     * 实际的清理动作。只在 GL 线程上执行。
+     */
     private void doClose() {
         if (viewFrameBufferPool != null) {
             viewFrameBufferPool.close();
             viewFrameBufferPool = null;
         }
-        // quad 清理
-        GLQuad q = quad;
-        if (q != null) {
-            q.close();
-            quad = null;
-        }
-        atlasPool.close();
-        viewWidth  = 0;
+        viewWidth = 0;
         viewHeight = 0;
-    }
-
-    // ═══════════════════════════════════════════════
-    // 内部
-    // ═══════════════════════════════════════════════
-
-    public PixelFormat getPixelFormat() { return pixelFormat; }
-
-    public TiledCanvas newCanvas()
-    {
-        return emptyCanvasTpl.copy();
-    }
-
-    public GLProgramCache getProgramCache()
-    {
-        return glProgramManager.getCache();
-    }
-
-
-    public int getMinSingleDrawnTiles() {
-        return 200;
     }
 }

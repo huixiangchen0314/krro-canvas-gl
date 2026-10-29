@@ -44,27 +44,37 @@ import java.util.Arrays;
  */
 public final class ViewTileInfo {
 
-    /** 视口宽度（像素）。 */
+    /**
+     * 视口宽度（像素）。
+     */
     private final int viewWidth;
 
-    /** 视口高度（像素）。 */
+    /**
+     * 视口高度（像素）。
+     */
     private final int viewHeight;
 
-    /** 瓦片边长（像素）。 */
+    /**
+     * 瓦片边长（像素）。
+     */
     private final int tileSize;
 
-    /** 屏幕瓦片坐标。每屏幕瓦片 2 int：{@code [tileX, tileY]}。 */
+    /**
+     * 屏幕瓦片坐标。每屏幕瓦片 2 int：{@code [tileX, tileY]}。
+     */
     private final int[] tileXY;
 
-    /** 屏幕瓦片总数。 */
+    /**
+     * 屏幕瓦片总数。
+     */
     private final int viewTileCount;
 
     /**
-     * @param viewWidth       视口宽度（像素），必须 &gt; 0
-     * @param viewHeight      视口高度（像素），必须 &gt; 0
-     * @param tileSize        瓦片边长（像素），必须 &gt; 0
-     * @param tileXY          屏幕瓦片坐标数组，长度至少
-     *                        {@code 2 * screenTileCount}
+     * @param viewWidth     视口宽度（像素），必须 &gt; 0
+     * @param viewHeight    视口高度（像素），必须 &gt; 0
+     * @param tileSize      瓦片边长（像素），必须 &gt; 0
+     * @param tileXY        屏幕瓦片坐标数组，长度至少
+     *                      {@code 2 * screenTileCount}
      * @param viewTileCount 屏幕瓦片总数，必须 &ge; 0
      * @throws IllegalArgumentException 参数非法
      */
@@ -87,10 +97,10 @@ public final class ViewTileInfo {
             throw new IllegalArgumentException(
                     "tileXY must have length >= " + (viewTileCount * 2));
         }
-        this.viewWidth       = viewWidth;
-        this.viewHeight      = viewHeight;
-        this.tileSize        = tileSize;
-        this.tileXY          = Arrays.copyOf(tileXY, viewTileCount * 2);
+        this.viewWidth = viewWidth;
+        this.viewHeight = viewHeight;
+        this.tileSize = tileSize;
+        this.tileXY = Arrays.copyOf(tileXY, viewTileCount * 2);
         this.viewTileCount = viewTileCount;
     }
 
@@ -135,30 +145,56 @@ public final class ViewTileInfo {
     // 访问器
     // ═══════════════════════════════════════════════
 
-    /** 视口宽度（像素）。 */
-    public int getViewWidth() { return viewWidth; }
+    /**
+     * 视口宽度（像素）。
+     */
+    public int getViewWidth() {
+        return viewWidth;
+    }
 
-    /** 视口高度（像素）。 */
-    public int getViewHeight() { return viewHeight; }
+    /**
+     * 视口高度（像素）。
+     */
+    public int getViewHeight() {
+        return viewHeight;
+    }
 
-    /** 瓦片边长（像素）。 */
-    public int getTileSize() { return tileSize; }
+    /**
+     * 瓦片边长（像素）。
+     */
+    public int getTileSize() {
+        return tileSize;
+    }
 
-    /** 屏幕瓦片总数。 */
-    public int getViewTileCount() { return viewTileCount; }
+    /**
+     * 屏幕瓦片总数。
+     */
+    public int getViewTileCount() {
+        return viewTileCount;
+    }
 
     /**
      * 屏幕瓦片坐标数组。每 2 int 一对 {@code [tileX, tileY]}。
      *
      * <p>返回内部数组引用，调用方不得修改。
      */
-    public int[] getTileXY() { return tileXY; }
+    public int[] getTileXY() {
+        return tileXY;
+    }
 
-    /** 第 i 个屏幕瓦片的 x 坐标。 */
-    public int getTileX(int i) { return tileXY[i * 2]; }
+    /**
+     * 第 i 个屏幕瓦片的 x 坐标。
+     */
+    public int getTileX(int i) {
+        return tileXY[i * 2];
+    }
 
-    /** 第 i 个屏幕瓦片的 y 坐标。 */
-    public int getTileY(int i) { return tileXY[i * 2 + 1]; }
+    /**
+     * 第 i 个屏幕瓦片的 y 坐标。
+     */
+    public int getTileY(int i) {
+        return tileXY[i * 2 + 1];
+    }
 
     // ═══════════════════════════════════════════════
     // Object

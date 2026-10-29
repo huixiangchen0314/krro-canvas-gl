@@ -31,6 +31,6 @@ public final class GLExecutors {
                 timeoutMs,
                 window::init,
                 window::destroy
-                );
+        );
     }
 }

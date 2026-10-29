@@ -11,7 +11,8 @@ import java.util.Map;
 import java.util.Set;
 
 public final class TileProjector {
-    private TileProjector() {}
+    private TileProjector() {
+    }
 
     // ═══════════════════════════════════════════════
     // 追加语义
@@ -45,7 +46,9 @@ public final class TileProjector {
         return out;
     }
 
-    /** identity transform：dirtyKey 直接就是 layerKey，不需要 transformTile。 */
+    /**
+     * identity transform：dirtyKey 直接就是 layerKey，不需要 transformTile。
+     */
     private static void projectTileIdentityInto(
             ILayer layer, Long dirtyKey, ShaderLayerTileSet out) {
 
@@ -93,10 +96,10 @@ public final class TileProjector {
         if (layerKeys == null || layerKeys.isEmpty()) return;
 
         Map<ShaderLayerTileKey, ShaderLayerTileRef> layerTileIndex = out.layerTileIndex;
-        Map<ILayer, Integer> layerIndex          = out.layerIndex;
-        List<float[]> layerTable                 = out.layerTable;
+        Map<ILayer, Integer> layerIndex = out.layerIndex;
+        List<float[]> layerTable = out.layerTable;
         Map<Long, List<ShaderLayerTileRef>> porjectTilesMap = out.porjectTilesMap;
-        List<ShaderLayerTileRef> layerTileRefs   = out.layerTileRefs;
+        List<ShaderLayerTileRef> layerTileRefs = out.layerTileRefs;
 
         List<ShaderLayerTileRef> bucket = porjectTilesMap.computeIfAbsent(
                 dirtyKey, k -> new ArrayList<>());

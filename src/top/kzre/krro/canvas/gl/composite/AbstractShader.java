@@ -12,9 +12,10 @@ import java.util.function.Supplier;
 public abstract class AbstractShader implements Shader {
 
     private final Supplier<GLProgram> programSupplier;
-    private volatile GLProgram program;
     private final GLBindable[] bindables;
     private final List<ShaderLayerTileRef> tiles;
+    private volatile GLProgram program;
+
     protected AbstractShader(Supplier<GLProgram> programSupplier, GLBindable[] bindables, List<ShaderLayerTileRef> tiles) {
         this.bindables = bindables;
         this.tiles = tiles;

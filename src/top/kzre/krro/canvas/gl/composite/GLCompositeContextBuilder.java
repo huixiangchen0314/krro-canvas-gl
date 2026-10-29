@@ -1,13 +1,8 @@
 package top.kzre.krro.canvas.gl.composite;
 
-import top.kzre.colorutils.blend.Blends;
-import top.kzre.krro.canvas.gl.resource.GLProgramCache;
 import top.kzre.krro.canvas.gl.resource.PixelFormat;
 import top.kzre.krro.canvas.gl.tile.GLAtlasFactory;
-import top.kzre.krro.canvas.gl.tile.GLAtlasPool;
 import top.kzre.krro.core.util.SerialExecutor;
-
-import java.util.concurrent.CompletableFuture;
 
 /**
  * {@link GLCompositeContext} 的链式构建器。
@@ -40,12 +35,12 @@ import java.util.concurrent.CompletableFuture;
 public final class GLCompositeContextBuilder {
 
     private SerialExecutor glExecutor;
-    private int            tileSize;
-    private int            atlasCapacity;
+    private int tileSize;
+    private int atlasCapacity;
     private GLAtlasFactory atlasFactory;
 
-    private int         viewFboPoolCapacity = 4;
-    private PixelFormat pixelFormat         = PixelFormat.RGBA8;
+    private int viewFboPoolCapacity = 4;
+    private PixelFormat pixelFormat = PixelFormat.RGBA8;
 
     // ═══════════════════════════════════════════════
     // 必填
@@ -98,38 +93,38 @@ public final class GLCompositeContextBuilder {
      * @throws IllegalStateException    必填参数缺失
      * @throws IllegalArgumentException 参数非法
      */
-    public CompletableFuture<GLCompositeContext> build() {
-        if (glExecutor == null) {
-            throw new IllegalStateException("glExecutor is required");
-        }
-        if (tileSize <= 0) {
-            throw new IllegalStateException(
-                    "tileSize is required and must be > 0: " + tileSize);
-        }
-        if (atlasCapacity <= 0) {
-            throw new IllegalStateException(
-                    "atlasCapacity is required and must be > 0: " + atlasCapacity);
-        }
-        if (atlasFactory == null) {
-            throw new IllegalStateException("atlasFactory is required");
-        }
-        if (viewFboPoolCapacity <= 0) {
-            throw new IllegalArgumentException(
-                    "viewFboPoolCapacity must be > 0: " + viewFboPoolCapacity);
-        }
-        if (pixelFormat == null) {
-            throw new IllegalArgumentException("pixelFormat must not be null");
-        }
-
-        return glExecutor.submit(() -> {
-            GLAtlasPool pool = new GLAtlasPool(atlasCapacity, atlasFactory);
-            pool.warmup();
-            GLCompositeContext context = new GLCompositeContext(
-                    glExecutor, pool, tileSize,
-                    viewFboPoolCapacity, pixelFormat);
-            GLProgramCache programCache = context.getProgramCache();
-            programCache.get(Blends.NORMAL);
-            return context;
-        });
-    }
+//    public CompletableFuture<GLCompositeContext> build() {
+//        if (glExecutor == null) {
+//            throw new IllegalStateException("glExecutor is required");
+//        }
+//        if (tileSize <= 0) {
+//            throw new IllegalStateException(
+//                    "tileSize is required and must be > 0: " + tileSize);
+//        }
+//        if (atlasCapacity <= 0) {
+//            throw new IllegalStateException(
+//                    "atlasCapacity is required and must be > 0: " + atlasCapacity);
+//        }
+//        if (atlasFactory == null) {
+//            throw new IllegalStateException("atlasFactory is required");
+//        }
+//        if (viewFboPoolCapacity <= 0) {
+//            throw new IllegalArgumentException(
+//                    "viewFboPoolCapacity must be > 0: " + viewFboPoolCapacity);
+//        }
+//        if (pixelFormat == null) {
+//            throw new IllegalArgumentException("pixelFormat must not be null");
+//        }
+//
+//        return glExecutor.submit(() -> {
+//            GLAtlasPool pool = new GLAtlasPool(atlasCapacity, atlasFactory);
+//            pool.warmup();
+//            GLCompositeContext context = new GLCompositeContext(
+//                    glExecutor, pool, tileSize,
+//                    viewFboPoolCapacity, pixelFormat);
+//            GLProgramCache programCache = context.getProgramCache();
+//            programCache.get(Blends.NORMAL);
+//            return context;
+//        });
+//    }
 }

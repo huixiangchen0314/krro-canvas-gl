@@ -23,10 +23,21 @@ public final class Tuple4f {
         this.w = w;
     }
 
-    public float x() { return x; }
-    public float y() { return y; }
-    public float z() { return z; }
-    public float w() { return w; }
+    public float x() {
+        return x;
+    }
+
+    public float y() {
+        return y;
+    }
+
+    public float z() {
+        return z;
+    }
+
+    public float w() {
+        return w;
+    }
 
     // ── 值语义 ────────────────────────────────────
 

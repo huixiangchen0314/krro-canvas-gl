@@ -38,13 +38,19 @@ public final class FixedSizeTexturePool implements GLTexturePool, AutoCloseable 
     private final PixelFormat pixelFormat;
     private final NoGLTexturePool delegate;
 
-    /** 内部锁。避免用 {@code synchronized (this)} 被外部干扰。 */
+    /**
+     * 内部锁。避免用 {@code synchronized (this)} 被外部干扰。
+     */
     private final Object lock = new Object();
 
-    /** 空闲纹理栈。LIFO——优先复用最近归还的。 */
+    /**
+     * 空闲纹理栈。LIFO——优先复用最近归还的。
+     */
     private final Deque<GLTexture> idle = new ArrayDeque<>();
 
-    /** 关闭标记。volatile——读无需加锁。 */
+    /**
+     * 关闭标记。volatile——读无需加锁。
+     */
     private volatile boolean closed = false;
 
     public FixedSizeTexturePool(int capacity,
@@ -175,7 +181,7 @@ public final class FixedSizeTexturePool implements GLTexturePool, AutoCloseable 
      * @throws IllegalArgumentException 尺寸或格式不匹配
      */
     private void checkTexture(GLTexture texture) {
-        if (texture.getWidth()  != width
+        if (texture.getWidth() != width
                 || texture.getHeight() != height
                 || texture.getLayers() != layers) {
             throw new IllegalArgumentException(
@@ -233,14 +239,32 @@ public final class FixedSizeTexturePool implements GLTexturePool, AutoCloseable 
         }
     }
 
-    /** 是否已关闭。volatile 读，无需加锁。 */
-    public boolean isClosed() { return closed; }
+    /**
+     * 是否已关闭。volatile 读，无需加锁。
+     */
+    public boolean isClosed() {
+        return closed;
+    }
 
-    public int         getCapacity()    { return capacity; }
-    public int         getWidth()       { return width; }
-    public int         getHeight()      { return height; }
-    public int         getLayers()      { return layers; }
-    public PixelFormat getPixelFormat() { return pixelFormat; }
+    public int getCapacity() {
+        return capacity;
+    }
+
+    public int getWidth() {
+        return width;
+    }
+
+    public int getHeight() {
+        return height;
+    }
+
+    public int getLayers() {
+        return layers;
+    }
+
+    public PixelFormat getPixelFormat() {
+        return pixelFormat;
+    }
 
     @Override
     public SerialExecutor getGlExecutor() {

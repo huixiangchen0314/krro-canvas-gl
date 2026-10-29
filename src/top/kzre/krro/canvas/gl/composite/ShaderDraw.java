@@ -30,17 +30,21 @@ public final class ShaderDraw {
         if (bindables == null) {
             throw new IllegalArgumentException("bindables must not be null");
         }
-        this.shader    = shader;
+        this.shader = shader;
         this.bindables = bindables.clone();
     }
 
-    public Shader getShader()    { return shader; }
+    public Shader getShader() {
+        return shader;
+    }
 
     /**
      * 需要绑定到纹理单元的资源。下标即单元号，null 位置跳过。
      * 返回内部数组引用，调用方不得修改。
      */
-    public GLBindable[]  getBindables() { return bindables; }
+    public GLBindable[] getBindables() {
+        return bindables;
+    }
 
     @Override
     public String toString() {
