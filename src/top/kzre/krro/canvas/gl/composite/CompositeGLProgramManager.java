@@ -27,7 +27,7 @@ public final class CompositeGLProgramManager{
         String frag = Resources.loadClassPathText(
                 "resources/krro/canvas/gl/shaders/composite-normal-simple.frag");
 
-        cache.register(Blends.NORMAL,
+        cache.putIfAbsent(Blends.NORMAL,
                 () -> GLProgram.create(vert, frag));
     }
 }

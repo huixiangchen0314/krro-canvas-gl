@@ -8,15 +8,6 @@ import java.util.Map;
 /**
  * GLProgram 缓存。按 key 缓存已编译的 program。
  *
- * <p><b>注册与获取分离</b>：
- * <ul>
- *   <li>{@link #register} —— 注册 key → factory 的映射，构造时配置</li>
- *   <li>{@link #get} —— 按 key 取 program，未编译时调 factory 编译</li>
- *   <li>{@link #peek} —— 只查询已编译的 program，纯读</li>
- * </ul>
- *
- * <p><b>用途</b>：规划阶段用 {@link #peek} 预判 program 是否已编译，
- * 决定是否需要调度 GL 线程先编译；执行阶段用 {@link #get} 拿 program。
  *
  * <h2>线程契约</h2>
  * <ul>
@@ -57,7 +48,7 @@ public final class GLProgramCache implements GLThreadAffine, AutoCloseable {
      * @throws IllegalArgumentException key 或 factory 为 null
      * @throws IllegalStateException    key 已注册
      */
-    public void register(Object key, GLProgramFactory factory) {
+    public boolean putIfAbsent(Object key, GLProgramFactory factory) {
         if (key == null) {
             throw new IllegalArgumentException("key must not be null");
         }
@@ -65,9 +56,10 @@ public final class GLProgramCache implements GLThreadAffine, AutoCloseable {
             throw new IllegalArgumentException("factory must not be null");
         }
         if (factoryMap.containsKey(key)) {
-            throw new IllegalStateException("key already registered: " + key);
+           return false;
         }
         factoryMap.put(key, factory);
+        return true;
     }
 
     // ═══════════════════════════════════════════════
@@ -100,40 +92,6 @@ public final class GLProgramCache implements GLThreadAffine, AutoCloseable {
         p = factory.create();
         programMap.put(key, p);
         return p;
-    }
-
-    // ═══════════════════════════════════════════════
-    // 查询（纯读）
-    // ═══════════════════════════════════════════════
-
-    /**
-     * 返回已编译的 program，未编译返回 {@code null}。纯读，任意线程。
-     *
-     * <p>用于规划阶段预判是否需要调度 GL 线程编译。
-     */
-    public GLProgram peek(Object key) {
-        return programMap.get(key);
-    }
-
-    /**
-     * 指定 key 的 program 是否已编译。纯读，任意线程。
-     */
-    public boolean isCompiled(Object key) {
-        return programMap.containsKey(key);
-    }
-
-    /**
-     * 已注册的 key 数量。
-     */
-    public int getRegisteredCount() {
-        return factoryMap.size();
-    }
-
-    /**
-     * 已编译的 program 数量。
-     */
-    public int getCompiledCount() {
-        return programMap.size();
     }
 
     // ═══════════════════════════════════════════════
