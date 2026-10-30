@@ -30,16 +30,14 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
     private final SerialExecutor glExecutor;
     private final GLAtlasPool atlasPool;
     private final int tileSize;
-    private final PixelFormat pixelFormat;
     private final NoGLTexturePool noTexPool;
-    private final TiledCanvas emptyCanvasTpl;
     private final CompositeGLProgramManager glProgramManager;
 
     private final GLQuad quad;
     private volatile boolean closed = false;
 
     public GLCompositeFlyweight(SerialExecutor glExecutor,
-                                int tileSize, PixelFormat pixelFormat,
+                                int tileSize,
                                 GLAtlasPool atlasPool, CompositeGLProgramManager glProgramManager, GLQuad quad) {
         this.glProgramManager = glProgramManager;
         this.quad = quad;
@@ -52,20 +50,14 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
         if (tileSize <= 0) {
             throw new IllegalArgumentException("tileSize must be > 0: " + tileSize);
         }
-        if (pixelFormat == null) {
-            throw new IllegalArgumentException("pixelFormat must not be null");
-        }
+
 
         this.glExecutor = glExecutor;
         this.atlasPool = atlasPool;
         this.tileSize = tileSize;
-        this.pixelFormat = pixelFormat;
         this.noTexPool = new NoGLTexturePool(glExecutor);
 
-        int channels = PixelCodec.channels(pixelFormat);
-        float[] defaultPixels = new float[channels];
-        this.emptyCanvasTpl = new TiledCanvas(tileSize, defaultPixels);
-        emptyCanvasTpl.setReadonly(true);
+
     }
 
     // ── 访问器 ────────────────────────────────────
@@ -87,9 +79,6 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
         return tileSize;
     }
 
-    public PixelFormat getPixelFormat() {
-        return pixelFormat;
-    }
 
     public NoGLTexturePool getNoTexPool() {
         return noTexPool;
@@ -107,9 +96,7 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
         return 200;
     }
 
-    public TiledCanvas newCanvas() {
-        return emptyCanvasTpl.copy();
-    }
+
 
     // ── 生命周期 ──────────────────────────────────
 
@@ -141,7 +128,6 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
 
     public static class Builder {
         private SerialExecutor glExecutor;
-        private PixelFormat pixelFormat;
         private int tileSize;
         private int atlasCapacity;
         private GLAtlasFactory atlasFactory;
@@ -155,11 +141,6 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
 
         public Builder glExecutor(SerialExecutor glExecutor) {
             this.glExecutor = glExecutor;
-            return this;
-        }
-
-        public Builder pixelFormat(PixelFormat pixelFormat) {
-            this.pixelFormat = pixelFormat;
             return this;
         }
 
@@ -182,9 +163,6 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
             if (glExecutor == null) {
                 throw new IllegalStateException("glExecutor must not be null");
             }
-            if (pixelFormat == null) {
-                throw new IllegalStateException("pixelFormat must not be null");
-            }
             if (tileSize <= 0) {
                 throw new IllegalStateException("tileSize must be > 0: " + tileSize);
             }
@@ -206,7 +184,6 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
                 return new GLCompositeFlyweight(
                         glExecutor,
                         tileSize,
-                        pixelFormat,
                         glAtlasPool,
                         programManager,
                         glQuad);

@@ -46,7 +46,8 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
 
     /** 关闭标记。CAS 保证重复调用被拒绝。 */
     private final AtomicBoolean closed = new AtomicBoolean(false);
-
+    private final PixelFormat pixelFormat;
+    private final TiledCanvas emptyCanvasTpl;
     // ═══════════════════════════════════════════════
     // 构造
     // ═══════════════════════════════════════════════
@@ -58,7 +59,8 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
      * @throws IllegalStateException    flyweight 已关闭
      */
     public GLCompositeContext(GLCompositeFlyweight flyweight,
-                              int viewFboPoolCapacity) {
+                              int viewFboPoolCapacity,
+                              PixelFormat pixelFormat) {
         if (flyweight == null) {
             throw new IllegalArgumentException("flyweight must not be null");
         }
@@ -69,19 +71,24 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
         if (flyweight.isClosed()) {
             throw new IllegalStateException("flyweight is closed");
         }
-
         this.flyweight   = flyweight;
         this.glExecutor  = flyweight.getGlExecutor();
+        this.pixelFormat = pixelFormat;
+        int tileSize = flyweight.getTileSize();
         this.viewPool    = new AlignedFrameBufferPool(
-                flyweight.getTileSize(),
+                tileSize,
                 (w, h) -> createFboPool(viewFboPoolCapacity, w, h));
+        int channels = PixelCodec.channels(pixelFormat);
+        float[] defaultPixels = new float[channels];
+        this.emptyCanvasTpl = new TiledCanvas(tileSize, defaultPixels);
+        emptyCanvasTpl.setReadonly(true);
     }
 
     private FixedSizeFrameBufferPool createFboPool(int capacity, int width, int height) {
         FixedSizeTexturePool texturePool = new FixedSizeTexturePool(
                 capacity,
                 width, height, 2,
-                flyweight.getPixelFormat(),
+                pixelFormat,
                 flyweight.getNoTexPool());
         try {
             return new FixedSizeFrameBufferPool(texturePool);
@@ -142,7 +149,7 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
     }
 
     public TiledCanvas newCanvas() {
-        return flyweight.newCanvas();
+        return emptyCanvasTpl.copy();
     }
 
     public GLProgramCache getProgramCache() {
@@ -182,10 +189,6 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
 
     public int getTileSize() {
         return flyweight.getTileSize();
-    }
-
-    public PixelFormat getPixelFormat() {
-        return flyweight.getPixelFormat();
     }
 
     @Override
