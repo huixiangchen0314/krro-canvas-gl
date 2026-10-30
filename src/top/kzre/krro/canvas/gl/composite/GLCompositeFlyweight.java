@@ -111,10 +111,6 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
         return emptyCanvasTpl.copy();
     }
 
-    public TiledCanvas newReadonlyCanvas() {
-        return emptyCanvasTpl.copy().setReadonly(true);
-    }
-
     // ── 生命周期 ──────────────────────────────────
 
     /**
