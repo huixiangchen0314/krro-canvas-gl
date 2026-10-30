@@ -7,6 +7,7 @@ import top.kzre.krro.canvas.gl.util.BufferUtils;
 import top.kzre.krro.canvas.gl.util.Range;
 import top.kzre.krro.util.tile.Tile;
 import top.kzre.krro.util.tile.TileData;
+import top.kzre.krro.util.tile.TiledCanvas;
 import top.kzre.krro.util.tile.VersionedTile;
 
 import java.nio.ByteBuffer;
@@ -134,6 +135,10 @@ public final class GLAtlas implements GLBindable, AutoCloseable {
         }
         GLTileData tileData = tile.queryData(GLTileData.class);
         return tileData != null && tileData.isValid();
+    }
+
+    public static void keepGLTile(TiledCanvas canvas){
+        canvas.keepTiles(GLAtlas::inPage);
     }
 
     public static boolean exclusivePage(Tile tile) {
