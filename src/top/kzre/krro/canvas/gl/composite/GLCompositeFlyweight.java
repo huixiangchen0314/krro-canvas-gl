@@ -6,7 +6,6 @@ import top.kzre.krro.canvas.gl.tile.GLAtlasPool;
 import top.kzre.krro.canvas.gl.util.ExecutorUtils;
 import top.kzre.krro.canvas.gl.util.ResourceUtils;
 import top.kzre.krro.core.util.SerialExecutor;
-import top.kzre.krro.util.tile.TiledCanvas;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -31,16 +30,18 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
     private final GLAtlasPool atlasPool;
     private final int tileSize;
     private final NoGLTexturePool noTexPool;
-    private final CompositeGLProgramManager glProgramManager;
+    private final GLProgramCache programs;
 
     private final GLQuad quad;
     private volatile boolean closed = false;
 
     public GLCompositeFlyweight(SerialExecutor glExecutor,
                                 int tileSize,
-                                GLAtlasPool atlasPool, CompositeGLProgramManager glProgramManager, GLQuad quad) {
-        this.glProgramManager = glProgramManager;
-        this.quad = quad;
+                                GLAtlasPool atlasPool,
+                                GLProgramCache programs,
+                                GLQuad quad) {
+
+
         if (glExecutor == null) {
             throw new IllegalArgumentException("glExecutor must not be null");
         }
@@ -50,8 +51,14 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
         if (tileSize <= 0) {
             throw new IllegalArgumentException("tileSize must be > 0: " + tileSize);
         }
-
-
+        if (programs == null) {
+            throw new IllegalArgumentException("programs must not be null");
+        }
+        if (quad == null) {
+            throw new IllegalArgumentException("quad must not be null");
+        }
+        this.quad = quad;
+        this.programs = programs;
         this.glExecutor = glExecutor;
         this.atlasPool = atlasPool;
         this.tileSize = tileSize;
@@ -85,7 +92,7 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
     }
 
     public GLProgramCache getProgramCache() {
-        return glProgramManager.getCache();
+        return programs;
     }
 
     public boolean isClosed() {
@@ -177,15 +184,15 @@ public final class GLCompositeFlyweight implements GLThreadAffine, AutoCloseable
             {
                 GLQuad glQuad = buildQuad();
                 GLProgramCache programs = new GLProgramCache(glExecutor);
-                CompositeGLProgramManager programManager = new CompositeGLProgramManager(programs);
-                programManager.warmup();
+                CompositeGLProgramManager.init(programs);
+                CompositeGLProgramManager.warmup(programs);
                 GLAtlasPool glAtlasPool = new GLAtlasPool(glExecutor, atlasCapacity, atlasFactory);
                 glAtlasPool.warmup();
                 return new GLCompositeFlyweight(
                         glExecutor,
                         tileSize,
                         glAtlasPool,
-                        programManager,
+                        programs,
                         glQuad);
             });
         }
