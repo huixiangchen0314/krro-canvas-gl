@@ -174,4 +174,15 @@ public final class ResourceUtils {
         first.addSuppressed(next);
         return first;
     }
+
+    public static Throwable accumulateException(Throwable... exs) {
+        if(exs.length == 0) return null;
+        if(exs.length == 1) return exs[0];
+
+        Throwable first = null;
+        for (int i = 0; i < exs.length - 1; i++) {
+            first = accumulateException(exs[i], exs[i + 1]);
+        }
+        return first;
+    }
 }

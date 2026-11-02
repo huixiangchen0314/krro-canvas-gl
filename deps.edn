@@ -8,7 +8,6 @@
         ;; LWJGL 核心 + OpenGL（不含任何平台 natives）
         org.lwjgl/lwjgl {:mvn/version "3.3.3"}
         org.lwjgl/lwjgl-opengl {:mvn/version "3.3.3"}
-        org.lwjgl/lwjgl-glfw {:mvn/version "3.3.3"}
         }
 
  :aliases
@@ -19,6 +18,5 @@
 
   :dev
   {:extra-deps {org.lwjgl/lwjgl$natives-windows    {:mvn/version "3.3.3"}
-                org.lwjgl/lwjgl-opengl$natives-windows {:mvn/version "3.3.3"}
-                org.lwjgl/lwjgl-glfw$natives-windows   {:mvn/version "3.3.3"}}
+                org.lwjgl/lwjgl-opengl$natives-windows {:mvn/version "3.3.3"}}
    :main-opts ["-m" "top.kzre.krro.canvas.gl.core"]}}}
