@@ -1,6 +1,7 @@
 package top.kzre.krro.canvas.gl.tile;
 
 import clojure.lang.Keyword;
+import org.lwjgl.opengl.GL11;
 import top.kzre.colorutils.blend.Blends;
 import top.kzre.krro.canvas.gl.composite.ILayer;
 import top.kzre.krro.canvas.gl.composite.WrapLayer;
@@ -145,4 +146,12 @@ public final class FBOUtils {
         );
     }
 
+    /**
+     * 分块FBO作为视口输出时候的viewport设置
+     */
+    public static void glViewport(GLFramebuffer fbo, int actualWidth, int actualHeight) {
+        int texHeight = fbo.getHeight();
+        int paddingHeight = texHeight - actualHeight;
+        GL11.glViewport(0, paddingHeight, actualWidth, actualHeight);
+    }
 }

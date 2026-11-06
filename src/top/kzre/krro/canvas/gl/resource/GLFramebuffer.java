@@ -243,19 +243,25 @@ public final class GLFramebuffer implements AutoCloseable {
 
     /**
      * 绑定为当前渲染目标，同时设置 viewport。
+     * 默认不设置viewport
      */
     public void bind() {
+        bind(false);
+    }
+
+    public void bind(boolean fullViewport) {
         checkAlive();
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-        glViewport(0, 0, width, height);
+        if (fullViewport) {
+            glViewport(0, 0, width, height);
+        }
     }
 
     /**
      * 清空颜色缓冲；有 depth attachment 时同时清深度缓冲。
+     * 注意，不再在内部bind了，步骤方法不做bind。
      */
     public void clear(float r, float g, float b, float a) {
-        checkAlive();
-        bind();
         glClearColor(r, g, b, a);
         int mask = GL_COLOR_BUFFER_BIT;
         if (depthAttachment != null) {
