@@ -69,7 +69,8 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
         // ── 清屏 ──
         long tClearStart = System.nanoTime();
         for (GLFramebuffer fbo : fboPair) {
-            fbo.bind();
+            // shader 去处理分块逻辑，这里直接绑定整个fbo纹理
+            fbo.bind(true);
             try {
                 glClearColor(0f, 0f, 0f, 0f);
                 glClear(GL_COLOR_BUFFER_BIT);
