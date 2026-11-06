@@ -195,6 +195,42 @@ public final class GLProgram {
         }
     }
 
+    private static void requireMat3(float[] m9) {
+        if (m9 == null || m9.length < 9) {
+            throw new IllegalArgumentException(
+                    "m9 must have at least 9 elements, got "
+                            + (m9 == null ? "null" : m9.length));
+        }
+    }
+
+    private static void requireIntArray(int[] arr) {
+        if (arr == null) {
+            throw new IllegalArgumentException("int array must not be null");
+        }
+    }
+
+    private static void requireFloatArray(float[] arr) {
+        if (arr == null) {
+            throw new IllegalArgumentException("float array must not be null");
+        }
+    }
+
+    private static void requireVec3Array(float[] arr) {
+        if (arr == null || (arr.length % 3) != 0) {
+            throw new IllegalArgumentException(
+                    "vec3 array length must be a multiple of 3, got "
+                            + (arr == null ? "null" : arr.length));
+        }
+    }
+
+    private static void requireVec4Array(float[] arr) {
+        if (arr == null || (arr.length % 4) != 0) {
+            throw new IllegalArgumentException(
+                    "vec4 array length must be a multiple of 4, got "
+                            + (arr == null ? "null" : arr.length));
+        }
+    }
+
     // ═══════════════════════════════════════════════
     // Uniform 上传（不存在即抛）
     // ═══════════════════════════════════════════════
@@ -283,6 +319,57 @@ public final class GLProgram {
      */
     public void setVec4(String name, float x, float y, float z, float w) {
         glUniform4f(checkedLoc(name), x, y, z, w);
+    }
+
+    /**
+     * 上传 3×3 矩阵（9 元素，列主序）。
+     *
+     * <p>与 {@link #setMat2D} 的区别：{@code setMat2D} 接收 6 元素
+     * 仿射矩阵并补齐为 mat3；本方法接收完整的 9 元素 mat3，不做补齐。
+     *
+     * @throws IllegalArgumentException 数组为 null 或长度 &lt; 9
+     */
+    public void setMat3(String name, float[] m9) {
+        requireMat3(m9);
+        glUniformMatrix3fv(checkedLoc(name), false, m9);
+    }
+
+    /**
+     * 上传 int 数组 uniform（如 uniform int uModes[8]）。
+     */
+    public void setIntArray(String name, int[] arr) {
+        requireIntArray(arr);
+        glUniform1iv(checkedLoc(name), arr);
+    }
+
+    /**
+     * 上传 float 数组 uniform（如 uniform float uWeights[8]）。
+     */
+    public void setFloatArray(String name, float[] arr) {
+        requireFloatArray(arr);
+        glUniform1fv(checkedLoc(name), arr);
+    }
+
+    /**
+     * 上传 vec3 数组 uniform（如 uniform vec3 uLightDirs[4]）。
+     *
+     * @param arr 扁平化的 vec3 数组——{@code [x0,y0,z0,x1,y1,z1,...]}
+     * @throws IllegalArgumentException 数组为 null 或长度不是 3 的倍数
+     */
+    public void setVec3Array(String name, float[] arr) {
+        requireVec3Array(arr);
+        glUniform3fv(checkedLoc(name), arr);
+    }
+
+    /**
+     * 上传 vec4 数组 uniform（如 uniform vec4 uColors[4]）。
+     *
+     * @param arr 扁平化的 vec4 数组——{@code [x0,y0,z0,w0,...]}
+     * @throws IllegalArgumentException 数组为 null 或长度不是 4 的倍数
+     */
+    public void setVec4Array(String name, float[] arr) {
+        requireVec4Array(arr);
+        glUniform4fv(checkedLoc(name), arr);
     }
 
     // ═══════════════════════════════════════════════
@@ -376,6 +463,36 @@ public final class GLProgram {
         if (loc >= 0) glUniform4f(loc, x, y, z, w);
     }
 
+    public void setMat3IfPresent(String name, float[] m9) {
+        requireMat3(m9);
+        int loc = checkedLocOptional(name);
+        if (loc >= 0) glUniformMatrix3fv(loc, false, m9);
+    }
+
+    public void setIntArrayIfPresent(String name, int[] arr) {
+        requireIntArray(arr);
+        int loc = checkedLocOptional(name);
+        if (loc >= 0) glUniform1iv(loc, arr);
+    }
+
+    public void setFloatArrayIfPresent(String name, float[] arr) {
+        requireFloatArray(arr);
+        int loc = checkedLocOptional(name);
+        if (loc >= 0) glUniform1fv(loc, arr);
+    }
+
+    public void setVec3ArrayIfPresent(String name, float[] arr) {
+        requireVec3Array(arr);
+        int loc = checkedLocOptional(name);
+        if (loc >= 0) glUniform3fv(loc, arr);
+    }
+
+    public void setVec4ArrayIfPresent(String name, float[] arr) {
+        requireVec4Array(arr);
+        int loc = checkedLocOptional(name);
+        if (loc >= 0) glUniform4fv(loc, arr);
+    }
+
     // ═══════════════════════════════════════════════
     // 释放
     // ═══════════════════════════════════════════════
@@ -388,6 +505,8 @@ public final class GLProgram {
         int loc = checkedLocOptional(name);
         if (loc >= 0) glUniform2fv(loc, arr);
     }
+
+
 
     // ═══════════════════════════════════════════════
     // 内部辅助
