@@ -5,13 +5,12 @@ import org.lwjgl.opengl.GL11;
 import top.kzre.colorutils.blend.Blends;
 import top.kzre.krro.canvas.gl.composite.ILayer;
 import top.kzre.krro.canvas.gl.composite.WrapLayer;
-import top.kzre.krro.canvas.gl.resource.FixedSizeFrameBufferPool;
-import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
-import top.kzre.krro.canvas.gl.resource.GLTexture;
+import top.kzre.krro.canvas.gl.resource.*;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.math.KMath;
 import top.kzre.krro.util.tile.TiledCanvas;
 
+import java.awt.*;
 import java.util.UUID;
 
 /**
@@ -59,7 +58,8 @@ public final class FBOUtils {
      * @return 画布视图，持有 FBO 所有权
      */
     public static TiledCanvas asCanvas(
-            GLFramebuffer fbo, FixedSizeFrameBufferPool pool,
+            ColorAttachedFrameBuffer fbo,
+            GLFrameBufferPool pool,
             SerialExecutor glExecutor,
             int tileSize) {
 
@@ -92,14 +92,14 @@ public final class FBOUtils {
      * @return 画布视图，不持有 FBO 所有权
      */
     public static TiledCanvas wrapCanvas(
-            GLFramebuffer fbo, int tileSize, SerialExecutor glExecutor) {
+            ColorAttachedFrameBuffer fbo, int tileSize, SerialExecutor glExecutor) {
 
         GLTiledTextureLayer tiledTexture = wrapTiledTexture(glExecutor, fbo, tileSize);
 
         return tiledTexture.asCanvas();
     }
 
-    public static GLTiledTextureLayer wrapTiledTexture(SerialExecutor glExecutor, GLFramebuffer fbo, int tileSize) {
+    public static GLTiledTextureLayer wrapTiledTexture(SerialExecutor glExecutor, ColorAttachedFrameBuffer fbo, int tileSize) {
         GLTexture tex = fbo.getColorAttachment();
         int layer = fbo.getColorLayer();
 
@@ -133,7 +133,7 @@ public final class FBOUtils {
      * @return 图层视图，不持有 FBO 所有权
      */
     public static ILayer wrapLayer(
-            GLFramebuffer fbo, int tileSize, SerialExecutor glExecutor
+            ColorAttachedFrameBuffer fbo, int tileSize, SerialExecutor glExecutor
     ) {
         TiledCanvas canvas = wrapCanvas(fbo, tileSize, glExecutor);
         return new WrapLayer(

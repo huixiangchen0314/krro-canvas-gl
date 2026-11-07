@@ -2,10 +2,7 @@ package top.kzre.krro.canvas.gl.composite;
 
 import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.UploadableTile;
-import top.kzre.krro.canvas.gl.resource.GLBindable;
-import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
-import top.kzre.krro.canvas.gl.resource.GLInstanceBuffer;
-import top.kzre.krro.canvas.gl.resource.GLQuad;
+import top.kzre.krro.canvas.gl.resource.*;
 import top.kzre.krro.canvas.gl.tile.AtlasLayerRange;
 import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
 import top.kzre.krro.canvas.gl.tile.GLTile;
@@ -31,7 +28,7 @@ import static org.lwjgl.opengl.GL31.glTexBuffer;
  *
  * <p><b>线程契约</b>：{@code call} 必须在 GL 线程上执行。
  */
-public final class CompositeTask implements Callable<GLFramebuffer> {
+public final class CompositeTask implements Callable<DefaultGLFramebuffer> {
 
     private final CompositeRequest request;
 
@@ -45,7 +42,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
     }
 
     @Override
-    public GLFramebuffer call() throws Exception {
+    public DefaultGLFramebuffer call() throws Exception {
         long tCall = System.nanoTime();
 
         ViewTileInfo viewport = request.getViewportGrid();
@@ -53,7 +50,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
 
         List<ShaderDraw> draws = request.getDraws();
         GLCompositeContext context = request.getContext();
-        GLFramebuffer[] fboPair = {request.getFboA(), request.getFboB()};
+        DefaultGLFramebuffer[] fboPair = {request.getFboA(), request.getFboB()};
 
         if (draws.isEmpty()) {
             fboPair[0].bind();
@@ -68,7 +65,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
 
         // ── 清屏 ──
         long tClearStart = System.nanoTime();
-        for (GLFramebuffer fbo : fboPair) {
+        for (DefaultGLFramebuffer fbo : fboPair) {
             // shader 去处理分块逻辑，这里直接绑定整个fbo纹理
             fbo.bind(true);
             try {
@@ -88,7 +85,7 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
         try {
             for (int i = 0; i < draws.size(); i++) {
                 ShaderDraw draw = draws.get(i);
-                GLFramebuffer target = fboPair[i % 2];
+                DefaultGLFramebuffer target = fboPair[i % 2];
 
                 long tPageInNs = 0;
                 long tTableNs = 0;

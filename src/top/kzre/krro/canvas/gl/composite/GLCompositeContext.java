@@ -42,7 +42,9 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
     private final SerialExecutor glExecutor;
 
     /** 视口私有：对齐的 ping-pong FBO 池。 */
-    private final AlignedFrameBufferPool viewPool;
+    private final AlignedFrameBufferPool<
+            DefaultGLFramebuffer,
+            FixedSizeFrameBufferPool<DefaultGLFramebuffer>> viewPool;
 
     /** 关闭标记。CAS 保证重复调用被拒绝。 */
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -84,14 +86,14 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
         emptyCanvasTpl.setReadonly(true);
     }
 
-    private FixedSizeFrameBufferPool createFboPool(int capacity, int width, int height) {
+    private FixedSizeDefaultFrameBufferPool createFboPool(int capacity, int width, int height) {
         FixedSizeTexturePool texturePool = new FixedSizeTexturePool(
                 capacity,
                 width, height, 2,
                 pixelFormat,
                 flyweight.getNoTexPool());
         try {
-            return new FixedSizeFrameBufferPool(texturePool);
+            return new FixedSizeDefaultFrameBufferPool(texturePool);
         } catch (Throwable t) {
             try {
                 texturePool.close();
@@ -173,7 +175,7 @@ public class GLCompositeContext implements AutoCloseable, GLThreadAffine {
      * @throws IllegalStateException 未初始化（从未调用 {@link #adjustViewSize}）
      *         或上下文已关闭
      */
-    public FixedSizeFrameBufferPool getViewFrameBufferPool() {
+    public FixedSizeFrameBufferPool<DefaultGLFramebuffer> getViewFrameBufferPool() {
         return viewPool.getPool();
     }
 

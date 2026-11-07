@@ -15,7 +15,7 @@ import static org.lwjgl.opengl.GL30.*;
  * <ul>
  *   <li><b>tile 存储</b>：每层存放一个 tile，整块 canvas 可用一次 draw call 渲染。
  *       此时 {@code layers = tile 数量}。</li>
- *   <li><b>离屏渲染目标</b>：作为 {@link GLFramebuffer} 的颜色附着。
+ *   <li><b>离屏渲染目标</b>：作为 {@link DepthGLFramebuffer} 的颜色附着。
  *       此时 {@code layers = 1}，语义上退化为一张 2D 纹理。</li>
  * </ul>
  *

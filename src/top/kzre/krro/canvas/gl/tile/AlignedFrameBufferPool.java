@@ -1,21 +1,23 @@
 package top.kzre.krro.canvas.gl.tile;
 
+import top.kzre.krro.canvas.gl.resource.FixedSizeDefaultFrameBufferPool;
 import top.kzre.krro.canvas.gl.resource.FixedSizeFrameBufferPool;
+import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.util.ExecutorUtils;
 import top.kzre.krro.canvas.gl.util.NumberUtils;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 按 {@code tileSize} 对齐的 FBO 池持有者——{@link FixedSizeFrameBufferPool}
+ * 按 {@code tileSize} 对齐的 FBO 池持有者——{@link FixedSizeDefaultFrameBufferPool}
  * 的“对齐 + 重建”包装，不是独立的 GL 环境。
  *
- * <p><b>职责</b>：持有一个 {@link FixedSizeFrameBufferPool}，当请求尺寸
+ * <p><b>职责</b>：持有一个 {@link FixedSizeDefaultFrameBufferPool}，当请求尺寸
  * （对齐到 {@code tileSize} 后）变化时销毁旧池、创建新池。尺寸未变时
  * {@link #resize(int, int)} 是 no-op。
  *
  * <p><b>不拥有 GL 线程</b>：本类不实现 {@code GLThreadAffine}。GL 线程
- * 亲和性完全由内部的 {@link FixedSizeFrameBufferPool} 保证——调用方
+ * 亲和性完全由内部的 {@link FixedSizeDefaultFrameBufferPool} 保证——调用方
  * 通过 {@link #getPool()} 拿到 pool 后再走它的 {@code getGlExecutor()}。
  *
  * <p><b>延迟初始化</b>：构造时不创建 GL 资源。首次
@@ -40,7 +42,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p><b>close 不可重入</b>：重复调用抛 {@link IllegalStateException}。
  */
-public final class AlignedFrameBufferPool implements AutoCloseable {
+public final class AlignedFrameBufferPool<
+        V extends GLFramebuffer,
+        T extends FixedSizeFrameBufferPool<V>> implements AutoCloseable {
 
     /**
      * 池工厂。
@@ -48,11 +52,13 @@ public final class AlignedFrameBufferPool implements AutoCloseable {
      * <p><b>线程契约</b>：{@link #create(int, int)} 在 GL 线程调用。
      * 实现方不需要再做线程检查——调用方保证。
      */
-    public interface PoolFactory {
-        FixedSizeFrameBufferPool create(int width, int height);
+    public interface PoolFactory<
+            S extends GLFramebuffer,
+            P extends FixedSizeFrameBufferPool<S>> {
+        P create(int width, int height);
     }
 
-    private final PoolFactory factory;
+    private final PoolFactory<V, T> factory;
     private final int tileSize;
 
     /** 当前池的对齐尺寸。volatile——任意线程可读。 */
@@ -60,7 +66,7 @@ public final class AlignedFrameBufferPool implements AutoCloseable {
     private volatile int height;
 
     /** 当前池。volatile——GL 线程写，任意线程读。 */
-    private volatile FixedSizeFrameBufferPool pool;
+    private volatile FixedSizeFrameBufferPool<V> pool;
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -73,7 +79,7 @@ public final class AlignedFrameBufferPool implements AutoCloseable {
      * @param factory  池工厂，不能为 null
      * @throws IllegalArgumentException 任一参数非法
      */
-    public AlignedFrameBufferPool(int tileSize, PoolFactory factory) {
+    public AlignedFrameBufferPool(int tileSize, PoolFactory<V, T> factory) {
         if (tileSize <= 0) {
             throw new IllegalArgumentException("tileSize must be > 0: " + tileSize);
         }
@@ -142,7 +148,7 @@ public final class AlignedFrameBufferPool implements AutoCloseable {
             return;
         }
 
-        FixedSizeFrameBufferPool old = this.pool;
+        FixedSizeFrameBufferPool<V> old = this.pool;
 
         // 先创建新池——失败时旧状态保持不变
         this.pool   = factory.create(alignedW, alignedH);
@@ -168,8 +174,8 @@ public final class AlignedFrameBufferPool implements AutoCloseable {
      *
      * @throws IllegalStateException 池未初始化（从未调用 resize）
      */
-    public FixedSizeFrameBufferPool getPool() {
-        FixedSizeFrameBufferPool p = pool;
+    public FixedSizeFrameBufferPool<V> getPool() {
+        FixedSizeFrameBufferPool<V> p = pool;
         if (p == null) {
             throw new IllegalStateException(
                     "pool not initialized; call resize() first");
@@ -219,7 +225,7 @@ public final class AlignedFrameBufferPool implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) {
             throw new IllegalStateException("already closed");
         }
-        FixedSizeFrameBufferPool p = this.pool;
+        FixedSizeFrameBufferPool<V> p = this.pool;
         if (p == null) {
             return;   // 未初始化，无需调度
         }
@@ -228,7 +234,7 @@ public final class AlignedFrameBufferPool implements AutoCloseable {
 
     /** 实际清理。只在 GL 线程上执行。 */
     private void doClose() {
-        FixedSizeFrameBufferPool p = this.pool;
+        FixedSizeFrameBufferPool<V> p = this.pool;
         if (p != null) {
             try {
                 p.close();

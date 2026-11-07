@@ -1,6 +1,7 @@
 package top.kzre.krro.canvas.gl.composite;
 
 import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
+import top.kzre.krro.canvas.gl.resource.DepthGLFramebuffer;
 
 import java.util.concurrent.Callable;
 
@@ -11,16 +12,16 @@ import static org.lwjgl.opengl.GL11.*;
  *
  * <p>用于验证调用链——不依赖 atlas、shader、换页等资源。
  */
-public class MockClearBlueCompositeTask implements Callable<GLFramebuffer> {
+public class MockClearBlueCompositeTask implements Callable<DepthGLFramebuffer> {
 
-    private final GLFramebuffer fbo;
+    private final DepthGLFramebuffer fbo;
 
-    public MockClearBlueCompositeTask(GLFramebuffer fbo) {
+    public MockClearBlueCompositeTask(DepthGLFramebuffer fbo) {
         this.fbo = fbo;
     }
 
     @Override
-    public GLFramebuffer call() throws Exception {
+    public DepthGLFramebuffer call() throws Exception {
 
         fbo.bind();
         try {

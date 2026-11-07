@@ -1,8 +1,8 @@
 package top.kzre.krro.canvas.gl.composite;
 
 import top.kzre.colorutils.blend.Blends;
+import top.kzre.krro.canvas.gl.resource.DefaultGLFramebuffer;
 import top.kzre.krro.canvas.gl.resource.GLBindable;
-import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
 import top.kzre.krro.canvas.gl.tile.FBOUtils;
@@ -26,8 +26,8 @@ public final class CompositePlanner {
     public static CompositeRequest plan(
             List<ILayer> layers,
             GLCompositeContext context,
-            GLFramebuffer fboA,
-            GLFramebuffer fboB,
+            DefaultGLFramebuffer fboA,
+            DefaultGLFramebuffer fboB,
             Tuple4f imageAABB,
             Set<Long> dirtyTiles) {
 

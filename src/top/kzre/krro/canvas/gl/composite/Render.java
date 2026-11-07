@@ -1,7 +1,8 @@
 package top.kzre.krro.canvas.gl.composite;
 
+import top.kzre.krro.canvas.gl.resource.DefaultGLFramebuffer;
+import top.kzre.krro.canvas.gl.resource.FixedSizeDefaultFrameBufferPool;
 import top.kzre.krro.canvas.gl.resource.FixedSizeFrameBufferPool;
-import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.canvas.gl.tile.FBOUtils;
 import top.kzre.krro.canvas.gl.util.ExecutorUtils;
@@ -9,6 +10,7 @@ import top.kzre.krro.canvas.gl.util.Tuple4f;
 import top.kzre.krro.core.util.SerialExecutor;
 import top.kzre.krro.util.tile.TiledCanvas;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -78,7 +80,7 @@ public final class Render {
             Set<Long> dirtyTiles,
             long tStart) {
 
-        FixedSizeFrameBufferPool fboPool = ctx.getViewFrameBufferPool();
+        FixedSizeFrameBufferPool<DefaultGLFramebuffer> fboPool = ctx.getViewFrameBufferPool();
         SerialExecutor glExecutor = ctx.getGlExecutor();
         int tileSize = ctx.getTileSize();
         Set<GLTexture> extraTextures = LayerUtils.collectTextures(layers);
@@ -103,20 +105,20 @@ public final class Render {
      * 规划 + 提交 GL 执行。运行在 {@link PlanExecutor} 线程上。
      */
     private static CompletableFuture<TiledCanvas> planAndSubmit(
-            GLFramebuffer[] pair,
+            List<DefaultGLFramebuffer> pair,
             List<ILayer> layers,
             GLCompositeContext ctx,
             Tuple4f imageAABB,
             Set<Long> dirtyTiles,
-            FixedSizeFrameBufferPool fboPool,
+            FixedSizeFrameBufferPool<DefaultGLFramebuffer> fboPool,
             SerialExecutor glExecutor,
             int tileSize,
             long tStart,
             long tCollect,
             long tAcquire) {
 
-        GLFramebuffer fboA = pair[0];
-        GLFramebuffer fboB = pair[1];
+        DefaultGLFramebuffer fboA = pair.get(0);
+        DefaultGLFramebuffer fboB = pair.get(1);
 
         CompositeRequest request;
         try {
@@ -141,7 +143,7 @@ public final class Render {
 
         return ExecutorUtils.runOnThread(glExecutor, new CompositeTask(request))
                 .thenApply(resultFbo -> {
-                    GLFramebuffer other = (resultFbo == fboA) ? fboB : fboA;
+                    DefaultGLFramebuffer other = (resultFbo == fboA) ? fboB : fboA;
                     fboPool.release(other);
                     return resultFbo;
                 })
@@ -191,11 +193,11 @@ public final class Render {
         });
     }
 
-    private static CompletableFuture<GLFramebuffer[]> glAcquireFboPair(
-            FixedSizeFrameBufferPool pool,
+    private static CompletableFuture<List<DefaultGLFramebuffer>> glAcquireFboPair(
+            FixedSizeFrameBufferPool<DefaultGLFramebuffer> pool,
             Set<GLTexture> excluded) {
 
         return pool.ensureSlotsWithIdleAtLeastExcluding(2, 1, excluded)
-                .thenApply(v -> pool.acquire2IdleExcluding(excluded));
+                .thenApply(v -> pool.acquire2IdleExcluding(excluded, new ArrayList<>()));
     }
 }

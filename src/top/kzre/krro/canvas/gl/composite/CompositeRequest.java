@@ -1,6 +1,6 @@
 package top.kzre.krro.canvas.gl.composite;
 
-import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
+import top.kzre.krro.canvas.gl.resource.DefaultGLFramebuffer;
 import top.kzre.krro.canvas.gl.tile.AtlasPoolPage;
 
 import java.util.ArrayList;
@@ -38,13 +38,13 @@ public final class CompositeRequest {
     private final AtlasPoolPage page;
     private final ViewTileInfo viewTileInfo;
     private final List<ShaderDraw> draws;
-    private final GLFramebuffer fboA;
-    private final GLFramebuffer fboB;
+    private final DefaultGLFramebuffer fboA;
+    private final DefaultGLFramebuffer fboB;
     private final GLCompositeContext context;
 
     private CompositeRequest(GLCompositeContext context, ViewTileInfo viewTileInfo, List<ShaderDraw> draws, AtlasPoolPage page,
-                             GLFramebuffer fboA,
-                             GLFramebuffer fboB) {
+                             DefaultGLFramebuffer fboA,
+                             DefaultGLFramebuffer fboB) {
         this.page = page;
         this.viewTileInfo = viewTileInfo;
         this.draws = draws;
@@ -57,8 +57,8 @@ public final class CompositeRequest {
                                       ViewTileInfo viewTileInfo,
                                       List<ShaderDraw> bundles,
                                       AtlasPoolPage page,
-                                      GLFramebuffer fboA,
-                                      GLFramebuffer fboB) {
+                                      DefaultGLFramebuffer fboA,
+                                      DefaultGLFramebuffer fboB) {
         if (page == null) throw new IllegalArgumentException("page must not be null");
         if (viewTileInfo == null) throw new IllegalArgumentException("viewportGrid must not be null");
         if (bundles == null) throw new IllegalArgumentException("bundles must not be null");
@@ -94,11 +94,11 @@ public final class CompositeRequest {
         return draws;
     }
 
-    public GLFramebuffer getFboA() {
+    public DefaultGLFramebuffer getFboA() {
         return fboA;
     }
 
-    public GLFramebuffer getFboB() {
+    public DefaultGLFramebuffer getFboB() {
         return fboB;
     }
 
