@@ -114,7 +114,7 @@ public final class CompositeTask implements Callable<DefaultGLFramebuffer> {
                         GLBindable b = bindables[u];
                         if (b != null) {
                             b.bind(u);
-                            System.out.println("bind: " + b);
+//                            System.out.println("bind: " + b);
                         }
                     }
 
@@ -161,18 +161,18 @@ public final class CompositeTask implements Callable<DefaultGLFramebuffer> {
                     long d1 = System.nanoTime();
                     tDrawNs += d1 - d0;
                 } catch (Exception e) {
-                    System.out.println("composite failed. draw index: " + i);
+//                    System.out.println("composite failed. draw index: " + i);
                     throw e;
                 } finally {
                     GLQuad.unbind();
                 }
 
-                System.out.println("[draw " + i + "]"
-                        + " pageIn=" + ms(tPageInNs) + "ms"
-                        + " table=" + ms(tTableNs) + "ms"
-                        + " inst=" + ms(tInstNs) + "ms"
-                        + " glDraw=" + ms(tDrawNs) + "ms"
-                        + " | total=" + ms(tPageInNs + tTableNs + tInstNs + tDrawNs) + "ms");
+//                System.out.println("[draw " + i + "]"
+//                        + " pageIn=" + ms(tPageInNs) + "ms"
+//                        + " table=" + ms(tTableNs) + "ms"
+//                        + " inst=" + ms(tInstNs) + "ms"
+//                        + " glDraw=" + ms(tDrawNs) + "ms"
+//                        + " | total=" + ms(tPageInNs + tTableNs + tInstNs + tDrawNs) + "ms");
             }
         } finally {
             RuntimeException error = ResourceUtils.closeDelayError(transientBuffers);

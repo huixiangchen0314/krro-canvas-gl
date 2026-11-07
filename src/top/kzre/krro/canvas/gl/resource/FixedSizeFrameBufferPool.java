@@ -258,7 +258,7 @@ public abstract class FixedSizeFrameBufferPool
     public void release(GLFramebuffer framebuffer) {
         if (framebuffer == null) return;
         if (framebuffer.isReleased()) return;
-        System.out.println("release FrameBuffer");
+//        System.out.println("release FrameBuffer");
         T fbo;
         try{
             //noinspection unchecked
@@ -304,7 +304,7 @@ public abstract class FixedSizeFrameBufferPool
         }
 
         if (slotToClose != null) {
-            System.out.println("release slots, count=" + slotToClose.size());
+//            System.out.println("release slots, count=" + slotToClose.size());
             // 归还纹理（子类）+ GL 线程关闭 FBO
             releaseHolderTextures(slotToClose);
             ExecutorUtils.runOnThread(getGlExecutor(), slotToClose::close);

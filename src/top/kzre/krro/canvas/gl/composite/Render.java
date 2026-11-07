@@ -126,14 +126,14 @@ public final class Render {
         } catch (Throwable t) {
             fboPool.release(fboA);
             fboPool.release(fboB);
-            System.err.println("plan failed");
+//            System.err.println("plan failed");
             throw t;
         }
 
         long tPlan = System.nanoTime();
 
         if (request == null) {
-            System.out.println("empty plan, return empty canvas");
+//            System.out.println("empty plan, return empty canvas");
             fboPool.release(fboA);
             fboPool.release(fboB);
             long tNow = System.nanoTime();
