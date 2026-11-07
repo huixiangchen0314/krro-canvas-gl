@@ -9,7 +9,6 @@ import top.kzre.krro.util.tile.TiledCanvas;
 import top.kzre.krro.util.tile.util.WeakReferenceQueue;
 
 import java.util.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Atlas 池：管理 {@link GLAtlas} 的生命周期。
@@ -27,8 +26,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p><b>惰性创建</b>：atlas 按需创建，避免冷启动一次性分配全部显存。
  *
- * <p><b>线程契约</b>：所有方法都涉及 GL 资源或状态变更，必须在
- * GL 线程上调用。池由单一线程独占，内部无同步。
+ * 将会在两个线程执行
+ * 1. 调度线程
+ * 2. GL 线程
  */
 public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
 
@@ -53,14 +53,11 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
 
     /**
      * 被提升到 显存的瓦片
+     * 这个可能在 调度线程+GL线程被调用，是非并发安全的，因此需要加锁
      */
     private final WeakReferenceQueue<Tile> liftedTiles = new WeakReferenceQueue<>();
 
-    /**
-     * 冻结瓦片池，冻结时候不可变，这是强制保证下标稳定。
-     * 以及page 有效
-     */
-    private final AtomicBoolean freeze = new AtomicBoolean(false);
+    private final Object liftedTilesLock = new Object();
 
     // ═══════════════════════════════════════════════
     // 构造
@@ -99,20 +96,8 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
      * 规划-执行周期内使用同一个 page。
      */
     public AtlasPoolPage page() {
-        requireNoFreeze();
-        if (freeze.compareAndSet(false, true)) {
-            // Atlas 冻结
-            return new DefaultAtlasPoolPage(atlases.toArray(new GLAtlas[0]));
-        } else {
-            throw new IllegalStateException("Freeze has already been set");
-        }
-
-    }
-
-    private void requireNoFreeze() {
-        if (freeze.get()) {
-            throw new IllegalStateException("Freeze is already set");
-        }
+        // 转成数组，使得下标稳定
+        return new DefaultAtlasPoolPage(atlases.toArray(new GLAtlas[0]));
     }
 
     /**
@@ -131,7 +116,6 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
      */
     public void warmup(int count) {
         requireGlThread();
-        requireNoFreeze();
         if (count < 0) {
             throw new IllegalArgumentException("count must be >= 0: " + count);
         }
@@ -168,7 +152,6 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
      */
     public GLAtlas extractIdle() {
         requireGlThread();
-        requireNoFreeze();
         Iterator<GLAtlas> it = atlases.iterator();
         while (it.hasNext()) {
             GLAtlas atlas = it.next();
@@ -190,7 +173,6 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
      */
     public List<GLAtlas> extractAllIdle() {
         requireGlThread();
-        requireNoFreeze();
         List<GLAtlas> result = new ArrayList<>();
         GLAtlas atlas;
         while ((atlas = extractIdle()) != null) {
@@ -211,7 +193,6 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
      */
     @Override
     public void close() {
-        requireNoFreeze();
         for (GLAtlas atlas : atlases) {
             atlas.close();
         }
@@ -229,7 +210,6 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
      */
     public void purge() {
         requireGlThread();
-        requireNoFreeze();
         releaseIdle();
     }
 
@@ -262,7 +242,6 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
      */
     public void pack(int keepAtlases) {
         requireGlThread();
-        requireNoFreeze();
         if (keepAtlases < 0) {
             throw new IllegalArgumentException("keepAtlases must be >= 0: " + keepAtlases);
         }
@@ -325,6 +304,14 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
         }
     }
 
+    private boolean holdAtlas(GLAtlas atlas) {
+        for (GLAtlas glAtlas : atlases) {
+            if (Objects.equals(glAtlas, atlas)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /**
      * {@link AtlasPoolPage} 的默认实现。
@@ -353,33 +340,40 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
 
         @Override
         public void purge() {
-            liftedTiles.cleanup();
+            synchronized (liftedTilesLock){
+                liftedTiles.cleanup();
 
-            Iterator<Tile> it = liftedTiles.iterator();
-            while (it.hasNext()) {
-                Tile tile = it.next();
+                Iterator<Tile> it = liftedTiles.iterator();
+                while (it.hasNext()) {
+                    Tile tile = it.next();
 
-                if (!tile.isValid()) {            // 死瓦片：直接移除
+                    if (!tile.isValid()) {            // 死瓦片：直接移除
+                        it.remove();
+                        continue;
+                    }
+
+                    if (!isOutdate(tile)) continue;
+
+                    GLAtlas.GLTileDataImpl gl =
+                            tile.queryData(GLAtlas.GLTileDataImpl.class);
+                    if (gl == null || !gl.isValid()) {
+                        it.remove();
+                        continue;
+                    }
+
+                    // 跳过配额外的瓦片
+                    if (!holdAtlas(gl.getAtlas())) {
+                        continue;
+                    }
+
+                    if (!GLAtlas.isExclusive(gl)) {
+                        continue;
+                    }
+
+                    // 有效且独占——正常换出
+                    GLAtlas.pageOut(tile);
                     it.remove();
-                    continue;
                 }
-
-                if (!isOutdate(tile)) continue;
-
-                GLAtlas.GLTileDataImpl gl =
-                        tile.queryData(GLAtlas.GLTileDataImpl.class);
-                if (gl == null || !gl.isValid()) {
-                    it.remove();
-                    continue;
-                }
-
-                if (!GLAtlas.isExclusive(gl)) {
-                    continue;
-                }
-
-                // 有效且独占——正常换出
-                GLAtlas.pageOut(tile);
-                it.remove();
             }
         }
 
@@ -388,7 +382,10 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
             for (Tile tile : tiles) {
                 if (GLAtlas.inPage(tile)) {
                     // 重复入队是安全的
-                    liftedTiles.add(tile);
+                    synchronized (liftedTilesLock)
+                    {
+                        liftedTiles.add(tile);
+                    }
                 }
             }
         }
@@ -399,7 +396,9 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
                 throw new IllegalArgumentException("counts must be >= 0: " + counts);
             }
 
-            liftedTiles.cleanup();
+            synchronized (liftedTilesLock) {
+                liftedTiles.cleanup();
+            }
 
             int currentFree = 0;
             for (GLAtlas atlas : atlases) {
@@ -411,58 +410,30 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
 
             int extraNeed = counts - currentFree;
 
-            // ── 第一遍：驱逐脏瓦片 ──
-            Iterator<Tile> it = liftedTiles.iterator();
-            while (it.hasNext() && extraNeed > 0) {
-                Tile tile = it.next();
-                if (keepTiles != null && keepTiles.contains(tile)) continue;
-
-                if (!tile.isValid()) {            // 死瓦片
-                    it.remove();
-                    continue;
-                }
-
-                if (!isOutdate(tile)) continue;
-
-                GLAtlas.GLTileDataImpl gl =
-                        tile.queryData(GLAtlas.GLTileDataImpl.class);
-
-                if (gl == null || !gl.isValid()) {
-                    it.remove();
-                    continue;
-                }
-
-                if (!GLAtlas.isExclusive(gl)) {
-                    continue;
-                }
-
-                if (GLAtlas.pageOut(tile)) {
-                    extraNeed--;
-                    currentFree++;
-                }
-                it.remove();
-            }
-
-            // ── 第二遍：驱逐干净瓦片 ──
-            if (extraNeed > 0) {
-                it = liftedTiles.iterator();
+            synchronized (liftedTilesLock) {
+                // ── 第一遍：驱逐脏瓦片 ──
+                Iterator<Tile> it = liftedTiles.iterator();
                 while (it.hasNext() && extraNeed > 0) {
                     Tile tile = it.next();
                     if (keepTiles != null && keepTiles.contains(tile)) continue;
 
-                    if (!tile.isValid()) {        // ← 死瓦片
+                    if (!tile.isValid()) {            // 死瓦片
                         it.remove();
                         continue;
                     }
 
-                    if (isOutdate(tile)) continue;  // 脏的已在第一遍处理
+                    if (!isOutdate(tile)) continue;
 
                     GLAtlas.GLTileDataImpl gl =
                             tile.queryData(GLAtlas.GLTileDataImpl.class);
 
-                    if (gl == null
-                            || !gl.isValid()) {
+                    if (gl == null || !gl.isValid()) {
                         it.remove();
+                        continue;
+                    }
+
+                    // 跳过配额外的瓦片
+                    if (!holdAtlas(gl.getAtlas())) {
                         continue;
                     }
 
@@ -476,7 +447,43 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
                     }
                     it.remove();
                 }
+
+                // ── 第二遍：驱逐干净瓦片 ──
+                if (extraNeed > 0) {
+                    it = liftedTiles.iterator();
+                    while (it.hasNext() && extraNeed > 0) {
+                        Tile tile = it.next();
+                        if (keepTiles != null && keepTiles.contains(tile)) continue;
+
+                        if (!tile.isValid()) {        // ← 死瓦片
+                            it.remove();
+                            continue;
+                        }
+
+                        if (isOutdate(tile)) continue;  // 脏的已在第一遍处理
+
+                        GLAtlas.GLTileDataImpl gl =
+                                tile.queryData(GLAtlas.GLTileDataImpl.class);
+
+                        if (gl == null
+                                || !gl.isValid()) {
+                            it.remove();
+                            continue;
+                        }
+
+                        if (!GLAtlas.isExclusive(gl)) {
+                            continue;
+                        }
+
+                        if (GLAtlas.pageOut(tile)) {
+                            extraNeed--;
+                            currentFree++;
+                        }
+                        it.remove();
+                    }
+                }
             }
+
 
             return currentFree;
         }
@@ -515,7 +522,9 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
             pageIn(ref, factory);
 
             // 记录提升的瓦片，方便换下
-            liftedTiles.add(ref.getTile());
+            synchronized (liftedTilesLock){
+                liftedTiles.add(ref.getTile());
+            }
             return true;
         }
 
@@ -535,7 +544,9 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
             pageIn(ref, factory);
 
             // 记录提升的瓦片，方便换下
-            liftedTiles.add(ref.getTile());
+            synchronized (liftedTilesLock) {
+                liftedTiles.add(ref.getTile());
+            }
             return true;
         }
 
@@ -631,11 +642,5 @@ public final class GLAtlasPool implements AutoCloseable, GLThreadAffine {
             }
         }
 
-        @Override
-        public void close() {
-            if (!freeze.compareAndSet(true, false)) {
-                System.err.println("reenter GLAtlasPoolPage close");
-            }
-        }
     }
 }

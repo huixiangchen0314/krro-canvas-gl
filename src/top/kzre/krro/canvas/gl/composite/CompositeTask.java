@@ -178,7 +178,6 @@ public final class CompositeTask implements Callable<GLFramebuffer> {
                         + " | total=" + ms(tPageInNs + tTableNs + tInstNs + tDrawNs) + "ms");
             }
         } finally {
-            atlasPage.close();
             RuntimeException error = ResourceUtils.closeDelayError(transientBuffers);
             if (error != null) {
                 System.out.println(error.getMessage());

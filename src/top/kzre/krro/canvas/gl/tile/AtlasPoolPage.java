@@ -97,7 +97,6 @@ public interface AtlasPoolPage {
      */
     boolean allocateAt(TextureTileSlot slot, TileRef ref);
 
-    void close();
 
     /**
      * 把瓦片分配到任意一个有空闲槽位的 atlas——不指定具体位置。

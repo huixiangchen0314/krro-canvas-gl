@@ -100,6 +100,7 @@ final class PlanExecutor {
                 return t;
             }
         };
+        // 调度线程是单线程，和 GL 单线程成流水线
         return Executors.newSingleThreadExecutor(tf);
     }
 }
