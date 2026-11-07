@@ -4,6 +4,7 @@ import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE;
@@ -521,5 +522,33 @@ public final class GLTexture implements GLBindable, AutoCloseable {
         }
         glDeleteTextures(handle);
         closed = true;
+    }
+
+
+    private final ConcurrentHashMap<Integer, GLFramebuffer>
+    fboMap = new ConcurrentHashMap<>();
+
+    /**
+     * 分块纹理关联到FBO
+     */
+    public void assocFrameBuffer(int layer, GLFramebuffer framebuffer) {
+        GLFramebuffer set = fboMap.putIfAbsent(layer, framebuffer);
+        if (set != null) {
+            throw new IllegalStateException("Frame buffer " + layer + " is already in use");
+        }
+    }
+
+    public void dissocFrameBuffer(int layer, GLFramebuffer framebuffer) {
+        boolean remove = fboMap.remove(layer, framebuffer);
+        if (!remove) {
+            throw new IllegalStateException("Frame buffer " + layer + " not in use");
+        }
+    }
+
+    /**
+     * 获取关联的FBO
+     */
+    public GLFramebuffer getFrameBuffer(int layer) {
+        return fboMap.get(layer);
     }
 }

@@ -78,6 +78,8 @@ public final class DepthGLFramebuffer extends ColorAttachedFrameBuffer {
         this.colorLayer      = colorLayer;
         this.depthAttachment = depthAttachment;
         this.depthLayer      = depthLayer;
+        colorAttachment.assocFrameBuffer(colorLayer, this);
+        depthAttachment.assocFrameBuffer(depthLayer, this);
     }
 
     // ═══════════════════════════════════════════════

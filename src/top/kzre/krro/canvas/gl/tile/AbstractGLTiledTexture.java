@@ -2,10 +2,7 @@ package top.kzre.krro.canvas.gl.tile;
 
 import org.lwjgl.system.MemoryUtil;
 import top.kzre.krro.canvas.core.layer.render.DownloadableTile;
-import top.kzre.krro.canvas.gl.resource.GLBindable;
-import top.kzre.krro.canvas.gl.resource.GLTexture;
-import top.kzre.krro.canvas.gl.resource.PixelCodec;
-import top.kzre.krro.canvas.gl.resource.PixelFormat;
+import top.kzre.krro.canvas.gl.resource.*;
 import top.kzre.krro.canvas.gl.util.BufferUtils;
 import top.kzre.krro.canvas.gl.util.ExecutorUtils;
 import top.kzre.krro.core.util.SerialExecutor;

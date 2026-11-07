@@ -1,5 +1,6 @@
 package top.kzre.krro.canvas.gl.tile;
 
+import top.kzre.krro.canvas.gl.resource.GLFramebuffer;
 import top.kzre.krro.canvas.gl.resource.GLTexture;
 import top.kzre.krro.util.tile.Tile;
 import top.kzre.krro.util.tile.TiledCanvas;
@@ -42,11 +43,21 @@ public final class GLTextureLayerCanvas {
         return canvas;
     }
 
+    /**
+     * 获取颜色附着纹理
+     */
     public GLTexture getTexture() {
         return tileData.getTexture();
     }
 
     public int getLayer() {
         return tileData.getLayer();
+    }
+
+    /**
+     * 获取关联的 fbo
+     */
+    public GLFramebuffer getFramebuffer() {
+        return getTexture().getFrameBuffer(getLayer());
     }
 }

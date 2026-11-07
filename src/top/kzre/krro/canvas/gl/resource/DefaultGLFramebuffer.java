@@ -25,6 +25,7 @@ public final class DefaultGLFramebuffer extends ColorAttachedFrameBuffer {
         super(fbo, width, height, glThread);
         this.colorAttachment = colorAttachment;
         this.colorLayer = colorLayer;
+        colorAttachment.assocFrameBuffer(colorLayer, this);
     }
 
     @Override
