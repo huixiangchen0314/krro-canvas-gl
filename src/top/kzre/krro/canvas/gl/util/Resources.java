@@ -16,10 +16,9 @@ public final class Resources {
     /**
      * 从 classpath 加载文本文件，以 UTF-8 解码。
      *
-     * <p><b>路径必须绝对</b>——以 {@code /} 开头，相对 classpath 根。
-     * 拒绝相对路径，避免"以哪个类所在包为基准"的歧义。
+     * <p><b>路径必须绝对</b>——不以 / 开头
      *
-     * @param classpath 资源路径，必须以 {@code /} 开头，不能为 null
+     * @param classpath 资源路径, classpath 绝对路径
      * @return 文件内容（UTF-8 解码）
      * @throws IllegalArgumentException classpath 为 null 或不以 {@code /} 开头
      * @throws IllegalStateException    资源不存在或读取失败
@@ -27,6 +26,9 @@ public final class Resources {
     public static String loadClassPathText(String classpath) {
         if (classpath == null) {
             throw new IllegalArgumentException("classpath must not be null");
+        }
+        if (classpath.startsWith("/")) {
+            throw new IllegalArgumentException("classpath cannot start with '/'");
         }
 
         try (InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream(classpath)) {

@@ -13,7 +13,7 @@
  :aliases
  {:build
   {:deps {io.github.huixiangchen0314/clj-build-template
-          {:git/sha "6e5a240b462e8aa65f85d697bca5c3b2c847518a"}
+          {:git/sha "3ff0c1814d0aa7b603c94e67ac33ef8caf179616"}
           org.slf4j/slf4j-nop {:mvn/version "2.0.7"}}
    :ns-default build}
 

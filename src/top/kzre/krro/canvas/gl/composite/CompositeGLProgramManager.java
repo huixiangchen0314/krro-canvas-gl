@@ -23,7 +23,7 @@ public final class CompositeGLProgramManager{
      */
     private static void regSimpleNormal(GLProgramCache cache) {
         String vert = Resources.loadClassPathText(
-                "resources/krro/canvas/gl/shaders/tile-compo.vert");
+                "resources/krro/canvas/gl/shaders/tile_comp.vert");
         String frag = Resources.loadClassPathText(
                 "resources/krro/canvas/gl/shaders/normal16.frag");
 

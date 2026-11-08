@@ -10,6 +10,10 @@
 (defn clean [_]
       (tpl/clean))
 
+(defn compile-java [_]
+      (tpl/compile-java params))
+
+
 (defn jar [_]
       (tpl/jar params))
 
