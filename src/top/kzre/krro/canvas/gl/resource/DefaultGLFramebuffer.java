@@ -51,6 +51,8 @@ public final class DefaultGLFramebuffer extends ColorAttachedFrameBuffer {
         return new Builder();
     }
 
+
+
     public static final class Builder {
 
         private GLTexture colorAttachment;

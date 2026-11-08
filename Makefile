@@ -1,10 +1,17 @@
-.PHONY: clean jar install
+.PHONY: clean compile test jar uberjar repl
+
+
+all: clean compile-shaders install
+
+compile-shaders:
+	 cd shaders && make
 
 clean:
-	clojure -T:build clean
+	cd shaders && make clean
+	clj -T:build clean
 
 jar:
-	clojure -T:build jar
+	clj -T:build jar
 
-install: jar
-	mvn install:install-file -Dfile=target/krro-canvas-gl-0.1.0.jar -DpomFile=pom.xml
+install:
+	clj -T:build install

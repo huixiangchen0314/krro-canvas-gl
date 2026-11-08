@@ -529,20 +529,11 @@ public final class GLTexture implements GLBindable, AutoCloseable {
     fboMap = new ConcurrentHashMap<>();
 
     /**
-     * 分块纹理关联到FBO
+     * 分块纹理关联到FBO.
+     * 注意，这只是弱关联关系，实际依赖用户自己关联
      */
     public void assocFrameBuffer(int layer, GLFramebuffer framebuffer) {
-        GLFramebuffer set = fboMap.putIfAbsent(layer, framebuffer);
-        if (set != null) {
-            throw new IllegalStateException("Frame buffer " + layer + " is already in use");
-        }
-    }
-
-    public void dissocFrameBuffer(int layer, GLFramebuffer framebuffer) {
-        boolean remove = fboMap.remove(layer, framebuffer);
-        if (!remove) {
-            throw new IllegalStateException("Frame buffer " + layer + " not in use");
-        }
+        fboMap.put(layer, framebuffer);
     }
 
     /**

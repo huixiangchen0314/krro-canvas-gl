@@ -23,9 +23,9 @@ public final class CompositeGLProgramManager{
      */
     private static void regSimpleNormal(GLProgramCache cache) {
         String vert = Resources.loadClassPathText(
-                "resources/krro/canvas/gl/shaders/composite-noraml-simple.vert");
+                "resources/krro/canvas/gl/shaders/tile-compo.vert");
         String frag = Resources.loadClassPathText(
-                "resources/krro/canvas/gl/shaders/composite-normal-simple.frag");
+                "resources/krro/canvas/gl/shaders/normal16.frag");
 
         cache.putIfAbsent(Blends.NORMAL,
                 () -> GLProgram.create(vert, frag));

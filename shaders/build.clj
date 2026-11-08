@@ -4,12 +4,15 @@
 
 (def output-dir "out")
 
+(def resources-dir "../resources/resources/krro/canvas/gl/shaders/")
+
+
 (defn- append
   "把 vs 追加到 m 的 k 字段上，去重后返回新 map。nil 字段当空集合处理。"
   [m k vs]
   (update m k #(vec (distinct (concat % vs)))))
 
-(defn clean []
+(defn clean [_]
   (b/delete {:path output-dir}))
 
 (defn- composite-task
@@ -53,3 +56,7 @@
                                  :basis basis
                                  :target "glsl"))))
   nil)
+
+(defn install [_]
+      (b/copy-dir {:src-dirs   [output-dir]
+                   :target-dir resources-dir}))

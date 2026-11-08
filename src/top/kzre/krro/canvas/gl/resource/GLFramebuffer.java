@@ -69,6 +69,7 @@ public abstract class GLFramebuffer implements AutoCloseable, GLThreadAffine{
         released = true;
     }
 
+
     @Override
     public SerialExecutor getGlExecutor() {
         return glThread;

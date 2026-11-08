@@ -9,8 +9,10 @@
 .idea/
 .clj-kondo/
 krro-plugin-painting-gl-renderer.iml
+shaders/shaders.iml
 
 target/
 .nrepl-port
 
 shaders/out/
+resources/resources/krro/canvas/gl/shaders
